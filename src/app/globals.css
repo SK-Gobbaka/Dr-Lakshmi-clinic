@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #1F7A63;      /* clinic green: the one action colour */
+  --secondary: #FFFFFF;
+  --accent: #1F7A63;
+  --background: #FAFBF9;   /* cool paper */
+  --ink: #17222B;
+  --sand: #E9DDD0;         /* scalp: section bands */
+  --text-primary: #17222B;
+  --text-secondary: #4A5961;
+  --success: #1F7A63;
+  --warning: #B7791F;
+  --danger: #C2412D;       /* signal: urgent states only */
+  --border: #DCD6CC;
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-background: var(--background);
+  --color-ink: var(--ink);
+  --color-sand: var(--sand);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
+  --font-heading: var(--font-fraunces);
+  --font-body: var(--font-source);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-source), system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.font-heading {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+/* Shared section rhythm and heading */
+.section { padding-block: 5rem; }
+.section-title {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  line-height: 1.15;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  max-width: 22ch;
+}
+
+/* The one orchestrated moment: hero entrance */
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.hero-in { animation: hero-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hero-in-2 { animation-delay: 0.12s; }
+.hero-in-3 { animation-delay: 0.24s; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hero-in { animation: none; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--primary);
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: top 0.2s;
+}
+.skip-link:focus { top: 16px; }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
