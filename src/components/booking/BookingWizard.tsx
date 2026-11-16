@@ -24,23 +24,29 @@ import {
   getAvailableDates,
   getAvailableSlots,
   createAppointment,
+  createTreatmentBooking,
   getAppointmentByToken,
   getAppointmentTypes,
   getDoctorsForBooking,
 } from "@/actions/appointment";
-import type { AvailableSlot, PublicDoctor, PublicType } from "@/actions/appointment";
+import type { AvailableSlot, PublicDoctor, PublicType, PublicTreatment } from "@/actions/appointment";
 
 interface BookingWizardProps {
   initialToken?: string;
-  mode?: "book" | "reschedule";
+  mode?: "book" | "reschedule" | "treatment";
   rescheduleToken?: string;
+  treatments?: PublicTreatment[];
+  initialTreatmentId?: string;
 }
 
 export function BookingWizard({
   initialToken,
   mode = "book",
   rescheduleToken,
+  treatments = [],
+  initialTreatmentId = "",
 }: BookingWizardProps) {
+  const isTreatment = mode === "treatment";
   const [step, setStep] = useState(initialToken ? 3 : 1);
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>("");
@@ -55,6 +61,7 @@ export function BookingWizard({
   const [typeId, setTypeId] = useState("");
   const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
   const [doctorId, setDoctorId] = useState("");
+  const [treatmentId, setTreatmentId] = useState(initialTreatmentId);
   const [booked, setBooked] = useState<{ id: string; status: string; typeName: string; doctorName: string; name: string } | null>(null);
 
   // Month navigation for the calendar
@@ -84,7 +91,7 @@ export function BookingWizard({
   const loadSlots = useCallback(async (date: string) => {
     setLoadingSlots(true);
     setError("");
-    const result = await getAvailableSlots(date, rescheduleToken);
+    const result = await (isTreatment ? fetch(`/api/treatment-slots?date=${date}`).then((r) => r.json()).then((data) => ({ success: true as const, data: data.slots })) : getAvailableSlots(date, rescheduleToken));
     if (result.success) {
       setSlots(result.data);
       if (result.data.length === 0) {
@@ -95,7 +102,7 @@ export function BookingWizard({
       setSlots([]);
     }
     setLoadingSlots(false);
-  }, [rescheduleToken]);
+  }, [isTreatment, rescheduleToken]);
 
   useEffect(() => {
     const t = setTimeout(loadDates, 0);
@@ -103,16 +110,16 @@ export function BookingWizard({
   }, [loadDates]);
 
   useEffect(() => {
-    getAppointmentTypes()
+    if (!isTreatment) getAppointmentTypes()
       .then(setTypes)
       .catch(() => setError("Could not load appointment types. Please refresh the page."));
   }, []);
 
   useEffect(() => {
-    getDoctorsForBooking()
+    if (!isTreatment) getDoctorsForBooking()
       .then(setDoctors)
       .catch(() => setError("Could not load the list of doctors. Please refresh the page."));
-  }, []);
+  }, [isTreatment]);
 
   useEffect(() => {
     if (initialToken) {
@@ -133,7 +140,7 @@ export function BookingWizard({
     setSelectedSlot(slot);
   };
 
-  const handleDetailsSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleDetailsSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedSlot) {
       setError("Please select a time slot first.");
@@ -143,7 +150,31 @@ export function BookingWizard({
       handleConfirm();
       return;
     }
-    form.handleSubmit(() => {
+    if (isTreatment) {
+      if (!treatmentId) {
+        setError("Please select a treatment.");
+        return;
+      }
+      const fd = new FormData(e.currentTarget);
+      startTransition(async () => {
+        const result = await createTreatmentBooking({
+          fullName: String(fd.get("fullName") ?? "").trim(),
+          phone: String(fd.get("phone") ?? "").trim(),
+          email: String(fd.get("email") ?? "").trim(),
+          notes: String(fd.get("notes") ?? "").trim() || undefined,
+          treatmentId,
+          slotId: selectedSlot.id,
+          date: selectedDate,
+        });
+        if (result.success) {
+          setConfirmationToken(result.data.confirmationToken);
+          setBooked({ id: result.data.appointmentId, status: result.data.status, typeName: treatments.find((t) => t.id === treatmentId)?.name ?? "", doctorName: "", name: String(fd.get("fullName") ?? "") });
+          setStep(3);
+        } else setError(result.error);
+      });
+      return;
+    }
+    form.handleSubmit(async () => {
       if (!typeId) {
         setError("Please select an appointment type.");
         return;
@@ -494,6 +525,15 @@ export function BookingWizard({
 
                 {mode !== "reschedule" && (
                 <>
+                {isTreatment && <div className="space-y-3">
+                  <div className="border-b border-[#1F7A63]/20 pb-1"><h3 className="text-[#1F7A63] font-bold text-base uppercase tracking-wider">Treatment :</h3></div>
+                  <select name="treatmentId" required value={treatmentId} onChange={(e) => setTreatmentId(e.target.value)} className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm">
+                    <option value="">Choose a treatment</option>
+                    {treatments.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>}
+
+                {!isTreatment && <>
                 {/* Appointment type (required) */}
                 <div className="space-y-3">
                   <div className="border-b border-[#1F7A63]/20 pb-1">
@@ -522,8 +562,9 @@ export function BookingWizard({
                     </div>
                   )}
                 </div>
+                </>}
 
-                {/* Doctor to consult (required) */}
+                {!isTreatment && <> {/* Doctor to consult (required) */}
                 <div className="space-y-3">
                   <div className="border-b border-[#1F7A63]/20 pb-1">
                     <h3 className="text-[#1F7A63] font-bold text-base uppercase tracking-wider">Doctor to consult :</h3>
@@ -551,6 +592,7 @@ export function BookingWizard({
                     </div>
                   )}
                 </div>
+                </>}
 
                 {/* Form Fields: Name */}
                 <div className="space-y-2">
@@ -571,7 +613,7 @@ export function BookingWizard({
                   )}
                 </div>
 
-                {/* Form Fields: Age */}
+                {!isTreatment && <> {/* Form Fields: Age */}
                 <div className="space-y-2">
                   <div className="border-b border-[#1F7A63]/20 pb-1">
                     <label htmlFor="age" className="text-[#1F7A63] font-bold text-base uppercase tracking-wider block">
@@ -589,6 +631,7 @@ export function BookingWizard({
                     <p className="text-xs text-danger font-semibold mt-1">{form.formState.errors.age.message}</p>
                   )}
                 </div>
+                </>}
 
                 {/* Form Fields: Gender */}
                 <div className="space-y-2">

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getTreatmentsForBooking } from "@/actions/appointment";
-import { TreatmentBooking } from "@/components/booking/TreatmentBooking";
+import { BookingWizard } from "@/components/booking/BookingWizard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export default async function BookTreatmentPage({ searchParams }: { searchParams
       {treatments.length === 0 ? (
         <p className="mx-auto max-w-xl rounded-xl border border-dashed border-border p-8 text-center text-text-secondary">Treatments are not available to book right now. Please call the clinic.</p>
       ) : (
-        <TreatmentBooking treatments={treatments} initialSlug={treatment} />
+        <BookingWizard mode="treatment" treatments={treatments} initialTreatmentId={treatments.find((x) => x.slug === treatment)?.id ?? ""} />
       )}
     </div>
   );
