@@ -1,19 +1,10 @@
-import { saveSessionAction, saveSlotCapsAction, setAutoConfirmAction, toggleSessionAction, unblockDateAction, updateSlotAction } from "@/actions/admin";
+import { saveSessionAction, setAutoConfirmAction, toggleSessionAction, unblockDateAction, updateSlotAction } from "@/actions/admin";
 import { requireAdmin } from "@/lib/admin-auth";
-import { blockedReason, getSettings, listBlocked, listSessions, listSlots, slotCaps } from "@/lib/local-store";
+import { blockedReason, getSettings, listBlocked, listSessions, listSlots } from "@/lib/local-store";
 import { addDaysUTC, formatDateForApi, todayIST } from "@/lib/slots";
-import { formatTime12Hour } from "@/lib/utils";
 import { Empty, Notice, PageTitle, btnPlain, btnPrimary, card, fmtDate, fmtTime, input, one, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
-
-/** One-hour starts inside a session, e.g. 09:00, 10:00, 11:00. */
-function hoursOf(s: { startTime: string; endTime: string }): string[] {
-  const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
-  const out: string[] = [];
-  for (let t = m(s.startTime); t < m(s.endTime); t += 60) out.push(`${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`);
-  return out;
-}
 
 function SessionForm({ s }: { s?: ReturnType<typeof listSessions>[number] }) {
   return (
@@ -45,7 +36,6 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
   const sp = await searchParams;
   const sessions = listSessions();
   const settings = getSettings();
-  const caps = slotCaps();
   const date = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.date)) ? one(sp.date) : formatDateForApi(addDaysUTC(todayIST(), 1));
   const slots = listSlots(date);
   const closed = blockedReason(date);
@@ -70,26 +60,11 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
             </div>
             <SessionForm s={s} />
 
-            <form action={saveSlotCapsAction} className="mt-5 border-t border-border pt-4">
-              <h3 className="mb-1 text-sm font-semibold text-ink">Capacity for each time slot</h3>
-              <p className="mb-3 text-xs text-text-secondary">
-                How many appointments one hour can take, every day. Leave a box empty for no limit beyond the session total ({s.capacity}). A slot never takes more than the session total.
-              </p>
-              <div className="flex flex-wrap items-end gap-3">
-                {hoursOf(s).map((h) => (
-                  <label key={h} className="text-sm font-semibold">
-                    {formatTime12Hour(h)}
-                    <input type="number" name={`cap_${h}`} min={1} max={500} defaultValue={caps[h] ?? ""} placeholder="no limit" className={`${input} mt-1 w-28`} />
-                  </label>
-                ))}
-                <button className={btnPlain}>Save slot capacity</button>
-              </div>
-            </form>
           </section>
         ))}
       </div>
       <p className="mt-2 text-xs text-text-secondary">
-        Slots are one hour long, starting at the session start. Times and capacity cannot be changed in a way that would leave an upcoming booking outside every session or above capacity.
+        Slots are one hour long, starting at the session start. Edit individual slot limits from the Slots &amp; dates section below.
       </p>
 
       <section className={`${card} mt-6 p-4`}>
@@ -101,7 +76,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="font-heading text-lg font-semibold">Slots &amp; dates</h2>
-            <p className="mt-1 text-sm text-text-secondary">Fine-tune individual slots, disable a time, or manage blocked dates.</p>
+            <p className="mt-1 text-sm text-text-secondary">Edit individual slot limits, disable a time, or manage blocked dates.</p>
           </div>
           <form className="flex items-end gap-2">
             <label className="text-sm font-semibold">Date<input type="date" name="date" defaultValue={date} className={`${input} mt-1`} /></label>
