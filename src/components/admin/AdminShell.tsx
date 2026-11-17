@@ -27,14 +27,14 @@ export function AdminShell({ admin, unread, logout, children }: { admin: string;
   const active = (href: string) => (href === "/admin" ? path === "/admin" : path.startsWith(href));
 
   const nav = (
-    <nav aria-label="Admin" className="flex flex-col gap-1 p-3">
+    <nav aria-label="Admin" className="flex flex-col gap-1.5 p-4">
       {NAV.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}
           onClick={() => setOpen(false)}
           aria-current={active(href) ? "page" : undefined}
-          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${active(href) ? "bg-primary text-white" : "text-ink hover:bg-sand/60"}`}
+          className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition-colors ${active(href) ? "bg-primary text-white shadow-sm" : "text-ink hover:bg-sand/70"}`}
         >
           <Icon className="h-4 w-4 shrink-0" />
           {label}
@@ -44,10 +44,10 @@ export function AdminShell({ admin, unread, logout, children }: { admin: string;
   );
 
   return (
-    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[16rem_1fr]">
+    <div className="admin-shell min-h-screen bg-background lg:grid lg:grid-cols-[17rem_1fr]">
       <aside className="hidden border-r border-border bg-white lg:block">
         <div className="sticky top-0 flex h-screen flex-col">
-          <div className="border-b border-border px-5 py-4 font-heading text-lg font-semibold text-ink">Clinic admin</div>
+          <div className="border-b border-border px-6 py-5 font-heading text-lg font-semibold tracking-tight text-ink">Clinic admin</div>
           <div className="flex-1 overflow-y-auto">{nav}</div>
         </div>
       </aside>
@@ -68,7 +68,7 @@ export function AdminShell({ admin, unread, logout, children }: { admin: string;
       )}
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-white/95 px-4 py-2.5 backdrop-blur">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center gap-3 border-b border-border bg-white/90 px-4 backdrop-blur-xl sm:px-6">
           <button type="button" onClick={() => setOpen(true)} aria-label="Open menu" className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-sand/60 lg:hidden">
             <Menu className="h-5 w-5" />
           </button>
@@ -76,13 +76,13 @@ export function AdminShell({ admin, unread, logout, children }: { admin: string;
           <NotificationBell endpoint="/admin/api/notifications" href="/admin/notifications" initialUnread={unread} />
           <span className="hidden text-sm text-text-secondary sm:inline">Signed in as {admin}</span>
           <form action={logout}>
-            <button type="submit" className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-white px-3 text-sm font-semibold text-ink hover:bg-sand/50">
+            <button type="submit" className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-white px-3.5 text-sm font-semibold text-ink shadow-sm hover:border-primary/30 hover:bg-sand/50">
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Sign out</span>
             </button>
           </form>
         </header>
-        <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-10">{children}</main>
       </div>
     </div>
   );

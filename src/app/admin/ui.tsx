@@ -74,16 +74,16 @@ export function Notice({ notice, error }: { notice?: string; error?: string }) {
   );
 }
 
-export const card = "rounded-xl border border-border bg-white shadow-sm";
+export const card = "rounded-2xl border border-border bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
 export const input =
-  "h-10 w-full rounded-lg border border-border bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-primary";
+  "h-11 w-full rounded-xl border border-border bg-white px-3.5 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-primary";
 export const textarea =
-  "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary";
+  "w-full rounded-xl border border-border bg-white px-3.5 py-2.5 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-primary";
 export const btn =
-  "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors";
-export const btnPrimary = `${btn} bg-primary text-white hover:bg-[#17604E]`;
-export const btnPlain = `${btn} border border-border bg-white text-ink hover:bg-sand/50`;
-export const btnDanger = `${btn} bg-danger text-white hover:opacity-90`;
+  "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors";
+export const btnPrimary = `${btn} bg-primary text-white shadow-sm hover:bg-[#1D4ED8]`;
+export const btnPlain = `${btn} border border-border bg-white text-ink shadow-sm hover:border-primary/30 hover:bg-sand/50`;
+export const btnDanger = `${btn} bg-danger text-white shadow-sm hover:opacity-90`;
 
 export function BackLink({ href = "/admin", children = "Back to dashboard" }: { href?: string; children?: React.ReactNode }) {
   return (

@@ -15,6 +15,17 @@
   --border: #DCD6CC;
 }
 
+/* Admin-only visual system: white surfaces, cool neutrals and blue actions. */
+.admin-shell {
+  --primary: #2563EB;
+  --background: #F5F7FB;
+  --sand: #EFF6FF;
+  --border: #E5E7EB;
+  --ink: #111827;
+  --text-primary: #111827;
+  --text-secondary: #64748B;
+}
+
 @theme inline {
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
