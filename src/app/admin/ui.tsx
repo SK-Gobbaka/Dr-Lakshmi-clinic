@@ -74,7 +74,7 @@ export function Notice({ notice, error }: { notice?: string; error?: string }) {
   );
 }
 
-export const card = "rounded-2xl border border-border bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+export const card = "admin-card rounded-2xl border border-border bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
 export const input =
   "h-11 w-full rounded-xl border border-border bg-white px-3.5 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-primary";
 export const textarea =

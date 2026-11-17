@@ -48,7 +48,7 @@ function TrendBars({ title, t }: { title: string; t: Trend }) {
           <div key={l} className="flex h-full flex-1 flex-col justify-end" title={`${l}: ${t.booked[i]} bookings, ${t.cancelled[i]} cancellations, ${t.rescheduled[i]} reschedulings`}>
             <div className="flex h-full items-end gap-px">
               {series.map((s) => (
-                <span key={s.name} className="flex-1 rounded-t" style={{ height: `${(s.values[i] / max) * 100}%`, minHeight: s.values[i] ? 3 : 0, background: s.color }} />
+                <span key={s.name} className="admin-chart-bar flex-1 rounded-t" style={{ animationDelay: `${i * 20}ms`, height: `${(s.values[i] / max) * 100}%`, minHeight: s.values[i] ? 3 : 0, background: s.color }} />
               ))}
             </div>
           </div>
@@ -76,7 +76,7 @@ function Pie({ title, parts }: { title: string; parts: { label: string; value: n
         <p className="text-sm text-text-secondary">No data in this range.</p>
       ) : (
         <div className="flex flex-wrap items-center gap-4">
-          <svg viewBox="0 0 36 36" className="h-36 w-36 shrink-0" role="img" aria-label={`${title}: ${parts.map((p) => `${p.label} ${p.value}`).join(", ")}`}>
+          <svg viewBox="0 0 36 36" className="admin-chart-donut h-36 w-36 shrink-0" role="img" aria-label={`${title}: ${parts.map((p) => `${p.label} ${p.value}`).join(", ")}`}>
             {parts.map((p, i) => {
               const pct = (p.value / total) * 100;
               return <circle key={p.label} cx="18" cy="18" r={R} fill="none" stroke={p.color} strokeWidth="6" strokeDasharray={`${pct} ${100 - pct}`} strokeDashoffset={offsets[i]} />;
@@ -168,7 +168,7 @@ export default async function StatisticsPage({ searchParams }: { searchParams: S
               <li key={d.label} className="grid grid-cols-[minmax(8rem,14rem)_1fr_2rem] items-center gap-2 text-sm">
                 <span className="truncate">{d.label}</span>
                 <span className="h-3 rounded bg-sand/60">
-                  <span className="block h-3 rounded bg-primary" style={{ width: `${(d.value / doctorMax) * 100}%` }} />
+                  <span className="admin-chart-horizontal block h-3 rounded bg-primary" style={{ width: `${(d.value / doctorMax) * 100}%` }} />
                 </span>
                 <span className="text-right font-semibold">{d.value}</span>
               </li>

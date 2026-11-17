@@ -81,7 +81,7 @@ export function AdminShell({ admin, unread, logout, children }: { admin: string;
             </button>
           </form>
         </header>
-        <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-10">{children}</main>
+        <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-10"><div key={path} className="admin-page">{children}</div></main>
       </div>
     </div>
   );

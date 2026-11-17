@@ -110,3 +110,38 @@ body {
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+/* Motion stays scoped to the admin portal. Final chart dimensions remain data-driven. */
+@keyframes admin-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes admin-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes admin-width-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes admin-donut-enter {
+  from { opacity: 0; transform: scale(.94) rotate(-8deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .admin-shell .admin-page { animation: admin-enter 320ms cubic-bezier(.2,0,0,1); }
+  .admin-shell .admin-card { animation: admin-enter 350ms cubic-bezier(.2,0,0,1) backwards; }
+  .admin-shell .admin-card:nth-child(2) { animation-delay: 35ms; }
+  .admin-shell .admin-card:nth-child(3) { animation-delay: 70ms; }
+  .admin-shell .admin-card:nth-child(4) { animation-delay: 105ms; }
+  .admin-shell .admin-chart-bar { transform-origin: bottom; animation: admin-bar-grow 500ms cubic-bezier(.2,0,0,1) backwards; }
+  .admin-shell .admin-chart-horizontal { transform-origin: left; animation: admin-width-grow 550ms cubic-bezier(.2,0,0,1) backwards; }
+  .admin-shell .admin-chart-donut { animation: admin-donut-enter 500ms cubic-bezier(.2,0,0,1); }
+  .admin-shell button, .admin-shell nav a { transition: background-color 150ms, box-shadow 150ms, transform 150ms; }
+  .admin-shell button:active:not(:disabled) { transform: scale(.98); }
+  .admin-shell nav a:hover { transform: translateX(2px); }
+  .admin-shell input, .admin-shell select, .admin-shell textarea { transition: border-color 150ms, box-shadow 150ms; }
+  .admin-shell tbody tr { transition: background-color 150ms; }
+  .admin-shell tbody tr:hover { background-color: var(--sand); }
+  .admin-shell details[open] > div { animation: admin-enter 220ms ease-out; }
+}
