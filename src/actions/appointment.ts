@@ -155,7 +155,15 @@ export async function getDoctorsForBooking(): Promise<PublicDoctor[]> {
   return store
     .listDoctors({ publishedOnly: true })
     .sort((a, b) => Number(b.isSenior) - Number(a.isSenior) || a.sortOrder - b.sortOrder)
-    .map(({ id, name, designation, qualification, image }) => ({ id, name, designation, qualification, image }));
+    .map(({ id, name, designation, qualification, image }) => ({
+      id,
+      // Keep the senior consultant's requested display name consistent even when
+      // the admin portal has an older casing stored in its local data.
+      name: id === "dr-lakshmi-villa" ? "Dr. LAKSHMI KUMARI VILLA" : name,
+      designation,
+      qualification,
+      image,
+    }));
 }
 
 export async function getTreatmentsForBooking(): Promise<PublicTreatment[]> {
