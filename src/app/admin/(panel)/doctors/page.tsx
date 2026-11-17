@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 function DoctorForm({ d }: { d?: Doctor }) {
   return (
-    <form action={saveDoctorAction} encType="multipart/form-data" className="space-y-4">
+    <form action={saveDoctorAction} className="space-y-4">
       {d && <input type="hidden" name="id" value={d.id} />}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className={label}>
