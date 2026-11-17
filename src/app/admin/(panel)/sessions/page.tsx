@@ -1,40 +1,14 @@
-import { saveSessionAction, setAutoConfirmAction, toggleSessionAction, unblockDateAction, updateSlotAction } from "@/actions/admin";
+import { setAutoConfirmAction, unblockDateAction, updateSlotAction } from "@/actions/admin";
 import { requireAdmin } from "@/lib/admin-auth";
-import { blockedReason, getSettings, listBlocked, listSessions, listSlots } from "@/lib/local-store";
+import { blockedReason, getSettings, listBlocked, listSlots } from "@/lib/local-store";
 import { addDaysUTC, formatDateForApi, todayIST } from "@/lib/slots";
 import { Empty, Notice, PageTitle, btnPlain, btnPrimary, card, fmtDate, fmtTime, input, one, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
 
-function SessionForm({ s }: { s?: ReturnType<typeof listSessions>[number] }) {
-  return (
-    <form action={saveSessionAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_auto] lg:items-end">
-      {s && <input type="hidden" name="id" value={s.id} />}
-      <label className="text-sm font-semibold">
-        Session name
-        <input name="name" required defaultValue={s?.name} placeholder="e.g. Afternoon" className={`${input} mt-1`} />
-      </label>
-      <label className="text-sm font-semibold">
-        Starts
-        <input type="time" name="startTime" required defaultValue={s?.startTime} className={`${input} mt-1`} />
-      </label>
-      <label className="text-sm font-semibold">
-        Ends
-        <input type="time" name="endTime" required defaultValue={s?.endTime} className={`${input} mt-1`} />
-      </label>
-      <label className="text-sm font-semibold">
-        Appointments per day
-        <input type="number" name="capacity" min={1} max={500} required defaultValue={s?.capacity ?? 10} className={`${input} mt-1`} />
-      </label>
-      <button className={s ? btnPlain : btnPrimary}>{s ? "Save" : "Add session"}</button>
-    </form>
-  );
-}
-
 export default async function SessionsPage({ searchParams }: { searchParams: SP }) {
   await requireAdmin();
   const sp = await searchParams;
-  const sessions = listSessions();
   const settings = getSettings();
   const date = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.date)) ? one(sp.date) : formatDateForApi(addDaysUTC(todayIST(), 1));
   const slots = listSlots(date);
@@ -42,41 +16,14 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
 
   return (
     <>
-      <PageTitle sub="Each session accepts up to its capacity per day. Confirmed and pending appointments both count; cancelled ones free their place immediately.">Sessions &amp; capacity</PageTitle>
+      <PageTitle sub="Choose a date and edit each available time directly. Set a slot limit, disable a time, or manage blocked dates.">Slots &amp; dates</PageTitle>
       <Notice notice={one(sp.notice)} error={one(sp.error)} />
 
-      <div className="space-y-4">
-        {sessions.map((s) => (
-          <section key={s.id} className={`${card} p-4 ${s.active ? "" : "opacity-70"}`}>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-heading text-lg font-semibold">
-                {s.name} {!s.active && <span className="text-sm font-normal text-text-secondary">(inactive, hidden from booking)</span>}
-              </h2>
-              <form action={toggleSessionAction}>
-                <input type="hidden" name="id" value={s.id} />
-                <input type="hidden" name="active" value={String(!s.active)} />
-                <button className={`${btnPlain} h-9`}>{s.active ? "Deactivate" : "Activate"}</button>
-              </form>
-            </div>
-            <SessionForm s={s} />
-
-          </section>
-        ))}
-      </div>
-      <p className="mt-2 text-xs text-text-secondary">
-        Slots are one hour long, starting at the session start. Edit individual slot limits from the Slots &amp; dates section below.
-      </p>
-
-      <section className={`${card} mt-6 p-4`}>
-        <h2 className="mb-3 font-heading text-lg font-semibold">Add a session</h2>
-        <SessionForm />
-      </section>
-
-      <section className={`${card} mt-8 p-4 sm:p-6`}>
+      <section className={`${card} mt-6 p-4 sm:p-6`}>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="font-heading text-lg font-semibold">Slots &amp; dates</h2>
-            <p className="mt-1 text-sm text-text-secondary">Edit individual slot limits, disable a time, or manage blocked dates.</p>
+            <h2 className="font-heading text-lg font-semibold">Date &amp; time slots</h2>
+            <p className="mt-1 text-sm text-text-secondary">Edit any time slot directly for the selected date.</p>
           </div>
           <form className="flex items-end gap-2">
             <label className="text-sm font-semibold">Date<input type="date" name="date" defaultValue={date} className={`${input} mt-1`} /></label>
