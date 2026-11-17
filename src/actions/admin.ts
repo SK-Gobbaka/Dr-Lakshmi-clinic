@@ -231,8 +231,8 @@ export async function updateSlotAction(formData: FormData) {
 
   const result = store.setSlotOverride(slotId, patch, admin);
   refresh();
-  if (!result.ok) back(`/admin/slots?date=${date}`, "error", result.error);
-  back(`/admin/slots?date=${date}`, "notice", "Slot updated");
+  if (!result.ok) back(`/admin/sessions?date=${date}`, "error", result.error);
+  back(`/admin/sessions?date=${date}`, "notice", "Slot updated");
 }
 
 /** Capacity for each hour of the day (applies every day). Empty box = no limit beyond the session total. */

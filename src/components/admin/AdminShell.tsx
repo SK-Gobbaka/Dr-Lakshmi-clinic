@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Bell, CalendarDays, CalendarOff, ChartColumn, ClipboardList, Clock, History, LayoutDashboard, LogOut, Menu, Stethoscope, Syringe, Tags, Users, X } from "lucide-react";
+import { Bell, CalendarDays, ChartColumn, ClipboardList, Clock, History, LayoutDashboard, LogOut, Menu, Stethoscope, Syringe, Tags, Users, X } from "lucide-react";
 import { NotificationBell } from "@/components/shared/NotificationBell";
 
 const NAV = [
@@ -14,7 +14,6 @@ const NAV = [
   { href: "/admin/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/admin/treatments", label: "Treatments", icon: Syringe },
   { href: "/admin/statistics", label: "Statistics", icon: ChartColumn },
-  { href: "/admin/slots", label: "Slots & dates", icon: CalendarOff },
   { href: "/admin/types", label: "Appointment types", icon: Tags },
   { href: "/admin/patients", label: "Patients", icon: Users },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
