@@ -590,10 +590,6 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
 
               {confirmationToken && (
                 <div className="mt-8 pt-6 border-t border-gray-100 flex flex-wrap justify-center gap-4 text-xs font-semibold">
-                  <Link href="/my-appointments" className="text-text-primary hover:underline">
-                    My Appointments
-                  </Link>
-                  <span className="text-gray-300">|</span>
                   <Link href={`/book/edit/${confirmationToken}`} className="text-teal-600 hover:underline">
                     Edit Details
                   </Link>

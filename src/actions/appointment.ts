@@ -5,7 +5,7 @@ import { bookingSchema, cancelSchema, rescheduleSchema, treatmentBookingSchema, 
 import { formatDateForApi, getBookableDates, isDateBookable, parseApiDate } from "@/lib/slots";
 import * as store from "@/lib/local-store";
 import { deliver } from "@/lib/notify";
-import { myTokens, rememberToken } from "@/lib/patient-session";
+import { rememberToken } from "@/lib/patient-session";
 
 export type ActionResult<T = void> =
   | { success: true; data: T }
@@ -33,7 +33,6 @@ export interface DoctorAvailability {
 
 function refresh() {
   revalidatePath("/book");
-  revalidatePath("/my-appointments");
   revalidatePath("/admin", "layout");
 }
 
@@ -160,39 +159,4 @@ export async function updateMyAppointment(input: unknown): Promise<ActionResult>
   await rememberToken(token);
   refresh();
   return { success: true, data: undefined };
-}
-
-export async function getMyAppointments() {
-  const tokens = await myTokens();
-  return store
-    .getByTokens(tokens)
-    .sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime))
-    .map((a) => ({
-      id: a.id,
-      token: a.token,
-      fullName: a.fullName,
-      phone: a.phone,
-      date: a.date,
-      startTime: a.startTime,
-      endTime: a.endTime,
-      status: a.status,
-      typeName: store.appointmentLabel(a),
-      doctorName: store.doctorLabel(a),
-      sessionName: store.sessionNameFor(a.startTime),
-      needsAttention: a.needsAttention,
-      cancelReason: a.cancelReason,
-      history: a.history,
-    }));
-}
-
-export async function getMyNotifications() {
-  const ids = store.getByTokens(await myTokens()).map((a) => a.id);
-  const list = store.listNotifications({ audience: "PATIENT", appointmentIds: ids });
-  return { unread: list.filter((n) => !n.readAt).length, items: list };
-}
-
-export async function markMyNotificationsRead(notificationId?: string): Promise<void> {
-  const ids = store.getByTokens(await myTokens()).map((a) => a.id);
-  store.markNotificationsRead({ audience: "PATIENT", appointmentIds: ids }, notificationId);
-  revalidatePath("/my-appointments");
 }

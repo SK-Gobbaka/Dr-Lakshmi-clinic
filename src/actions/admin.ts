@@ -26,7 +26,6 @@ const publicRefresh = () => {
 
 const refresh = () => {
   revalidatePath("/admin", "layout");
-  revalidatePath("/my-appointments");
   revalidatePath("/book");
 };
 

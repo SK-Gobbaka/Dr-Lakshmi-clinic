@@ -6,13 +6,11 @@ import { useState, useEffect } from "react";
 import { Menu, X, Phone } from "lucide-react";
 import { HOSPITAL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { NotificationBell } from "@/components/shared/NotificationBell";
 
 const navLinks = [
   { href: "/", label: "Home" },
   { href: "/doctors", label: "Doctors" },
   { href: "/treatments", label: "Treatments" },
-  { href: "/my-appointments", label: "My Appointments" },
 ];
 
 const bookBtn =
@@ -79,7 +77,6 @@ export function Header() {
         </nav>
 
         <div className="hidden lg:flex items-center gap-2">
-          <NotificationBell endpoint="/api/notifications" href="/my-appointments" label="Your notifications" />
           <a href={`tel:${HOSPITAL.phone}`} className={callBtn} aria-label="Call hospital">
             <Phone className="h-4 w-4" />
             <span className="hidden xl:inline">Call now</span>
@@ -93,7 +90,6 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-1 lg:hidden">
-        <NotificationBell endpoint="/api/notifications" href="/my-appointments" label="Your notifications" />
         <button
           type="button"
           className="lg:hidden flex h-11 w-11 items-center justify-center rounded-full text-ink hover:bg-sand/60"

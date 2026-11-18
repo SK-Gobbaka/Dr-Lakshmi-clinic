@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { updateMyAppointment } from "@/actions/appointment";
 import { SlotPicker } from "@/components/shared/SlotPicker";
@@ -65,10 +64,7 @@ export function PatientEditForm({ token, types, values }: Props) {
       )}
       {saved && (
         <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-          Your appointment was updated successfully. The clinic has been notified.{" "}
-          <Link href="/my-appointments" className="underline">
-            Back to My Appointments
-          </Link>
+          Your appointment was updated successfully. The clinic has been notified.
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2">

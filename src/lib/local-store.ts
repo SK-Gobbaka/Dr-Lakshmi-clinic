@@ -1285,7 +1285,7 @@ export function blockDate(date: string, reason: string, by: string, approved: Re
           kind: "RESCHEDULED",
           dedupe: `resched:${a.id}:${slot.id}`,
           title: "Your appointment has been rescheduled",
-          message: `The clinic is closed on ${was.date} (${reason.trim()}), so your appointment was moved.\nAppointment ID: ${a.id}\nAppointment Type: ${now.type}\nOriginal: ${was.date}, ${was.time}\nNew: ${now.date}, ${now.time} - ${now.session}\nIf this time does not suit you, you can change it from My Appointments or call ${HOSPITAL.phoneDisplay}.`,
+          message: `The clinic is closed on ${was.date} (${reason.trim()}), so your appointment was moved.\nAppointment ID: ${a.id}\nAppointment Type: ${now.type}\nOriginal: ${was.date}, ${was.time}\nNew: ${now.date}, ${now.time} - ${now.session}\nIf this time does not suit you, you can reschedule from the link in your booking message or call ${HOSPITAL.phoneDisplay}.`,
         });
       } else {
         a.needsAttention = true;
@@ -1299,7 +1299,7 @@ export function blockDate(date: string, reason: string, by: string, approved: Re
           kind: "NEEDS_ATTENTION",
           dedupe: `attention:${a.id}:${date}`,
           title: "Your appointment date is unavailable",
-          message: `The clinic is closed on ${was.date} (${reason.trim()}). Your appointment ${a.id} (${was.type}) needs a new date.\nThe clinic will contact you, or you can pick a new date from My Appointments. Call ${HOSPITAL.phoneDisplay} for help.`,
+          message: `The clinic is closed on ${was.date} (${reason.trim()}). Your appointment ${a.id} (${was.type}) needs a new date.\nThe clinic will contact you, or you can pick a new date from your reschedule link. Call ${HOSPITAL.phoneDisplay} for help.`,
         });
       }
     }
