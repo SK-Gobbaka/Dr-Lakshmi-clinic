@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { requireAdmin } from "@/lib/admin-auth";
-import { appointmentLabel, listAppointments, listDoctors, listTypes, stats } from "@/lib/local-store";
-import { formatDateForApi, todayIST } from "@/lib/slots";
+import { appointmentLabel, dashboardStats, listDoctors, listTypes, stats } from "@/lib/local-store";
 import { AddAppointmentDialog } from "@/components/admin/AddAppointmentDialog";
-import { Empty, PageTitle, STATUS_ROW, StatusBadge, card, fmtDate, fmtTime } from "../ui";
+import { Empty, PageTitle, StatusBadge, card, fmtDate, fmtTime } from "../ui";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +19,9 @@ function Tile({ label, value, href, tone }: { label: string; value: number; href
 export default async function Dashboard() {
   await requireAdmin();
   const s = stats();
+  const { overall, today } = dashboardStats();
   const types = listTypes({ activeOnly: true });
   const doctors = listDoctors({ publishedOnly: true });
-  const today = formatDateForApi(todayIST());
-  const todays = listAppointments()
-    .filter((a) => a.date === today)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   return (
     <>
@@ -43,39 +39,31 @@ export default async function Dashboard() {
         </Link>
       )}
 
-      <section className={`${card} mb-8 p-4`}>
-        <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Today&apos;s schedule</h2>
-        {todays.length === 0 ? (
-          <p className="text-text-secondary">Nothing booked for today. Use “Add appointment” for a walk-in.</p>
-        ) : (
-          <ul className="space-y-2">
-            {todays.map((a) => (
-              <li key={a.id}>
-                <Link href={`/admin/appointments/${a.id}`} className={`flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${STATUS_ROW[a.status]}`}>
-                  <span className="font-semibold">
-                    {fmtTime(a.startTime)} · {a.fullName}
-                  </span>
-                  <span className="text-text-secondary">{a.phone}</span>
-                  <StatusBadge status={a.status} />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+      <section aria-labelledby="overall" className="mb-8">
+        <h2 id="overall" className="mb-3 font-heading text-lg font-semibold text-ink">
+          Overall statistics
+        </h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Tile label="Total Appointments" value={overall.appointments} href="/admin/appointments?view=all" />
+          <Tile label="Total Completed" value={overall.completed} href="/admin/appointments?view=all" tone="text-green-700" />
+          <Tile label="Total Rescheduled" value={overall.rescheduled} href="/admin/appointments?view=all" tone="text-primary" />
+          <Tile label="Total Cancelled" value={overall.cancelled} href="/admin/appointments?view=all" tone="text-danger" />
+        </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile label="Total appointments" value={s.total} href="/admin/appointments?view=all" />
-        <Tile label="Today's appointments" value={s.today} href="/admin/appointments?view=today" />
-        <Tile label="Pending" value={s.pending} href="/admin/appointments?status=PENDING&view=all" tone="text-amber-700" />
-        <Tile label="Confirmed" value={s.confirmed} href="/admin/appointments?status=CONFIRMED&view=all" tone="text-primary" />
-        <Tile label="Cancelled" value={s.cancelled} href="/admin/appointments?status=CANCELLED&view=all" tone="text-danger" />
-        <Tile label="Open seats (next 30 days)" value={s.openSeats} href="/admin/calendar" />
-        <Tile label="Blocked dates ahead" value={s.blockedDates} href="/admin/calendar" />
-        <Tile label="Completed" value={s.completed} href="/admin/appointments?status=COMPLETED&view=all" />
-      </div>
+      <section aria-labelledby="today" className="mb-8">
+        <h2 id="today" className="mb-3 font-heading text-lg font-semibold text-ink">
+          Today&apos;s statistics
+        </h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Tile label="Today's Appointments" value={today.appointments} href="/admin/appointments?view=today" />
+          <Tile label="Today's Completed" value={today.completed} href="/admin/appointments?view=today" tone="text-green-700" />
+          <Tile label="Today's Rescheduled" value={today.rescheduled} href="/admin/appointments?view=today" tone="text-primary" />
+          <Tile label="Today's Cancelled" value={today.cancelled} href="/admin/appointments?view=today" tone="text-danger" />
+        </div>
+      </section>
 
-      <section className={`${card} mt-8 p-4`}>
+      <section className={`${card} p-4`}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="font-heading text-lg font-semibold text-ink">Recent bookings</h2>
           <Link href="/admin/appointments?view=all" className="text-sm font-semibold text-primary hover:underline">
@@ -95,7 +83,7 @@ export default async function Dashboard() {
                   {appointmentLabel(a)}
                   {a.kind === "CONSULTATION" && a.doctorName ? ` · ${a.doctorName}` : ""} · {fmtDate(a.date)}, {fmtTime(a.startTime)}
                 </span>
-                <StatusBadge status={a.status} />
+                <StatusBadge status={a.status} cancelledBy={a.cancelledBy} />
               </li>
             ))}
           </ul>

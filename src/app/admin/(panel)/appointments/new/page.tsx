@@ -5,6 +5,8 @@ import { getAppointment, listDoctors, listPatients, listSlots } from "@/lib/loca
 import { addDaysUTC, formatDateForApi, parseApiDate, slotStartsAt, todayIST } from "@/lib/slots";
 import { Notice, PageTitle, btnPlain, btnPrimary, card, fmtDate, fmtTime, input, one, type SP } from "../../../ui";
 
+const nowMs = () => Date.now();
+
 export const dynamic = "force-dynamic";
 
 export default async function NewAppointmentPage({ searchParams }: { searchParams: SP }) {
@@ -35,7 +37,7 @@ export default async function NewAppointmentPage({ searchParams }: { searchParam
 
   const today = formatDateForApi(todayIST());
   const date = v("date", today);
-  const slots = listSlots(date).filter((s) => slotStartsAt(parseApiDate(date), s.startTime).getTime() > Date.now());
+  const slots = listSlots(date).filter((s) => slotStartsAt(parseApiDate(date), s.startTime).getTime() > nowMs());
 
   return (
     <>

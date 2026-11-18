@@ -20,7 +20,7 @@ function back(to: string, kind: "notice" | "error", message: string): never {
 
 /** Pages that show doctors or treatments to visitors. */
 const publicRefresh = () => {
-  for (const p of ["/", "/doctors", "/treatments", "/book", "/book/treatment"]) revalidatePath(p);
+  for (const p of ["/", "/doctors", "/treatments", "/book"]) revalidatePath(p);
   revalidatePath("/admin", "layout");
 };
 
@@ -62,10 +62,26 @@ export async function changeStatus(formData: FormData) {
   if (!(to in STATUS_BY_ACTION)) back(here, "error", "Unknown action");
 
   const result = store.setStatus(id, STATUS_BY_ACTION[to], admin, { reason: field(formData, "reason") });
-  if (!result.ok) back(here, "error", result.error);
+  if (!result.ok) {
+    // A repeated click on the same action is harmless: say so instead of showing an error.
+    const now = store.getAppointment(id);
+    if (now && now.status === STATUS_BY_ACTION[to]) back(here, "notice", `${id} is already ${STATUS_BY_ACTION[to].toLowerCase().replace("_", "-")}${now.tokenNumber ? ` (token ${now.tokenNumber})` : ""}.`);
+    back(here, "error", result.error);
+  }
   deliver(result.outbox);
   refresh();
-  back(here, "notice", to === "confirm" ? "Appointment confirmed. The patient and admin notifications were sent." : "Status updated");
+  const token = result.data.tokenNumber;
+  back(
+    here,
+    "notice",
+    to === "confirm"
+      ? "Appointment confirmed. The patient and admin notifications were sent."
+      : to === "complete"
+        ? `${result.data.id} completed. Token number ${token}.`
+        : to === "cancel"
+          ? `${result.data.id} cancelled by admin.`
+          : "Status updated"
+  );
 }
 
 export async function deleteAppointmentAction(formData: FormData) {
@@ -149,6 +165,14 @@ export async function saveTypeAction(formData: FormData) {
   back("/admin/types", "notice", id ? "Appointment type updated" : "Appointment type created");
 }
 
+export async function deleteTypeAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const result = store.deleteType(field(formData, "id"), admin);
+  refresh();
+  if (!result.ok) back("/admin/types", "error", result.error);
+  back("/admin/types", "notice", "Appointment type deleted. Existing appointments keep its name.");
+}
+
 export async function toggleTypeAction(formData: FormData) {
   const admin = await requireAdmin();
   const id = field(formData, "id");
@@ -160,32 +184,54 @@ export async function toggleTypeAction(formData: FormData) {
   back("/admin/types", "notice", `${t.name} is now ${field(formData, "active") === "true" ? "active" : "inactive"}`);
 }
 
+/** Add a time slot, or change an existing slot's capacity. */
 export async function saveSessionAction(formData: FormData) {
   const admin = await requireAdmin();
   const id = field(formData, "id") || undefined;
+  const cap = field(formData, "capacity");
+  const existing = id ? store.listSessions().find((x) => x.id === id) : undefined;
   const result = store.saveSession(
     {
       id,
-      name: field(formData, "name"),
-      startTime: field(formData, "startTime"),
-      endTime: field(formData, "endTime"),
-      capacity: Number(field(formData, "capacity")),
+      startTime: field(formData, "startTime") || existing?.startTime || "",
+      endTime: field(formData, "endTime") || existing?.endTime || "",
+      capacity: cap === "" ? undefined : Number(cap),
     },
     admin
   );
   refresh();
   if (!result.ok) back("/admin/sessions", "error", result.error);
-  back("/admin/sessions", "notice", id ? "Session saved. Availability is updated everywhere." : "Session created");
+  back("/admin/sessions", "notice", id ? `${result.data.name} capacity saved. The booking page shows it now.` : `Time slot ${result.data.name} added (capacity ${result.data.capacity}).`);
 }
 
 export async function toggleSessionAction(formData: FormData) {
   const admin = await requireAdmin();
   const s = store.listSessions().find((x) => x.id === field(formData, "id"));
-  if (!s) back("/admin/sessions", "error", "Session not found");
-  const result = store.saveSession({ ...s, active: field(formData, "active") === "true" }, admin);
+  if (!s) back("/admin/sessions", "error", "Time slot not found");
+  const on = field(formData, "active") === "true";
+  const result = store.saveSession({ id: s.id, startTime: s.startTime, endTime: s.endTime, active: on }, admin);
   refresh();
   if (!result.ok) back("/admin/sessions", "error", result.error);
-  back("/admin/sessions", "notice", `${s.name} is now ${field(formData, "active") === "true" ? "active" : "inactive"}`);
+  back("/admin/sessions", "notice", `${s.name} is now ${on ? "active" : "inactive"}`);
+}
+
+export async function deleteSessionAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const result = store.deleteSession(field(formData, "id"), admin);
+  refresh();
+  if (!result.ok) back("/admin/sessions", "error", result.error);
+  back("/admin/sessions", "notice", "Time slot deleted");
+}
+
+/** One doctor group's daily capacity. Dr. Lakshmi and Other Doctors are saved separately. */
+export async function saveDoctorCapacityAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const date = field(formData, "date");
+  const here = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `/admin/sessions?date=${date}` : "/admin/sessions";
+  const result = store.setDoctorCapacity(field(formData, "group") as store.DoctorGroup, Number(field(formData, "capacity")), admin);
+  refresh();
+  if (!result.ok) back(here, "error", result.error);
+  back(here, "notice", "Doctor capacity saved. The booking page shows it now.");
 }
 
 export async function setAutoConfirmAction(formData: FormData) {
@@ -233,21 +279,6 @@ export async function updateSlotAction(formData: FormData) {
   refresh();
   if (!result.ok) back(`/admin/sessions?date=${date}`, "error", result.error);
   back(`/admin/sessions?date=${date}`, "notice", "Slot updated");
-}
-
-/** Capacity for each hour of the day (applies every day). Empty box = no limit beyond the session total. */
-export async function saveSlotCapsAction(formData: FormData) {
-  const admin = await requireAdmin();
-  const caps: Record<string, number | null> = {};
-  for (const [k, v] of formData.entries()) {
-    if (!k.startsWith("cap_")) continue;
-    const raw = String(v).trim();
-    caps[k.slice(4)] = raw === "" ? null : Number(raw);
-  }
-  const result = store.setSlotCaps(caps, admin);
-  refresh();
-  if (!result.ok) back("/admin/sessions", "error", result.error);
-  back("/admin/sessions", "notice", "Time slot capacity saved. Availability is updated everywhere.");
 }
 
 /** Emergency: block the date, cancel everything booked on it and message each patient with a rebooking link. */
@@ -320,24 +351,15 @@ export async function saveTreatmentAction(formData: FormData) {
     {
       id,
       name: field(formData, "name"),
-      category: field(formData, "category") as "hair" | "skin" | "laser",
-      shortDescription: field(formData, "shortDescription"),
-      description: field(formData, "description"),
       image: img.url || undefined,
-      duration: field(formData, "duration"),
-      sessions: field(formData, "sessions"),
-      benefits: list(field(formData, "benefits"), /\n/),
-      suitableFor: field(formData, "suitableFor"),
-      procedure: field(formData, "procedure"),
-      aftercare: field(formData, "aftercare"),
+      subcategories: formData.getAll("subcategory").map((v) => String(v).trim()).filter(Boolean),
       published: formData.get("published") === "on",
-      sortOrder: field(formData, "sortOrder") === "" ? undefined : Number(field(formData, "sortOrder")),
     },
     admin
   );
   if (!result.ok) back("/admin/treatments", "error", result.error);
   publicRefresh();
-  back("/admin/treatments", "notice", id ? `${result.data.name} updated. The website shows the change now.` : `${result.data.name} added. The website shows it now.`);
+  back("/admin/treatments", "notice", id ? `${result.data.name} updated. The Treatments page shows the change now.` : `${result.data.name} added. The Treatments page shows it now.`);
 }
 
 export async function deleteTreatmentAction(formData: FormData) {
@@ -348,9 +370,3 @@ export async function deleteTreatmentAction(formData: FormData) {
   back("/admin/treatments", "notice", "Treatment deleted");
 }
 
-export async function markAdminNotificationsRead(formData: FormData) {
-  await requireAdmin();
-  store.markNotificationsRead({ audience: "ADMIN" }, field(formData, "id") || undefined);
-  revalidatePath("/admin", "layout");
-  redirect("/admin/notifications");
-}

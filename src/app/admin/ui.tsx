@@ -51,10 +51,14 @@ export function StatusLegend() {
   );
 }
 
-export function StatusBadge({ status }: { status: Status }) {
+/** A cancelled appointment says who cancelled it: "Cancelled by Admin" or "Cancelled by Patient". */
+export const statusText = (status: Status, cancelledBy?: "ADMIN" | "PATIENT" | null) =>
+  status === "CANCELLED" && cancelledBy ? `Cancelled by ${cancelledBy === "ADMIN" ? "Admin" : "Patient"}` : STATUS_LABEL[status];
+
+export function StatusBadge({ status, cancelledBy }: { status: Status; cancelledBy?: "ADMIN" | "PATIENT" | null }) {
   return (
     <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[status]}`}>
-      {STATUS_LABEL[status]}
+      {statusText(status, cancelledBy)}
     </span>
   );
 }

@@ -16,9 +16,11 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
   const sp = await searchParams;
   const date = one(sp.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return <Notice error="Choose a date from the calendar first." />;
-  const reason = one(sp.reason).trim();
+  const alreadyBlocked = blockedReason(date);
+  const reason = one(sp.reason).trim() || alreadyBlocked || "";
 
-  if (blockedReason(date)) {
+  // A blocked date with active appointments left can still be cancelled in full; otherwise there is nothing to do here.
+  if (alreadyBlocked && planBlock(date).length === 0) {
     return (
       <>
         <PageTitle>Block date</PageTitle>
@@ -43,6 +45,12 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
       <PageTitle sub={`${fmtDate(date)} · ${plan.length} appointment(s) affected`}>Block date</PageTitle>
       <Notice notice={one(sp.notice)} error={one(sp.error)} />
 
+      {alreadyBlocked ? (
+        <p className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          {date} is already blocked ({alreadyBlocked}). {plan.length} appointment(s) are still active on it.
+        </p>
+      ) : (
+      <>
       <form method="get" className={`${card} p-4`}>
         <input type="hidden" name="date" value={date} />
         <label className="block text-sm font-semibold">
@@ -133,10 +141,13 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
         </form>
       </section>
 
+      </>
+      )}
+
       <section className="mt-6 rounded-xl border-2 border-danger/40 bg-red-50/50 p-4">
         <h2 className="mb-2 font-heading text-lg font-semibold text-danger">Emergency closure: cancel all appointments</h2>
         <p className="mb-3 text-sm text-text-secondary">
-          Use this when the clinic has to close at short notice. It blocks {fmtDate(date)} and <strong>cancels all {plan.length} appointment(s)</strong> on it instead of moving them. Each patient gets a WhatsApp message saying the clinic is closed, with a link to book again.
+          Use this when the clinic has to close at short notice. It blocks {fmtDate(date)} (new bookings stop) and <strong>cancels all {plan.length} appointment(s)</strong> on that date instead of moving them. They are marked Cancelled by Admin and stay visible when you open this date again. Each patient gets a WhatsApp message saying the clinic is closed, with a link to book again.
           This cannot be undone.
         </p>
         <form action={emergencyCloseAction}>

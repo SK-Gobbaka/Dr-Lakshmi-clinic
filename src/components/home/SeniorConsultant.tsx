@@ -30,7 +30,7 @@ export function SeniorConsultant({ doctor }: { doctor: SeniorDoctor }) {
   return (
     <section className="section" ref={ref}>
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 flex flex-col items-start">
-        <h2 className="section-title mb-10">Meet our senior consultant</h2>
+        <h2 className="section-title mb-10">Senior Consultant</h2>
 
         {/* Animation Container */}
         <motion.div 

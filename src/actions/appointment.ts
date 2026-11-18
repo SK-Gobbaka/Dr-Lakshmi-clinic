@@ -25,19 +25,10 @@ export interface PublicType {
   description: string;
 }
 
-export interface PublicDoctor {
-  id: string;
-  name: string;
-  designation: string;
-  qualification: string;
-  image: string;
-}
-
-export interface PublicTreatment {
-  id: string;
-  name: string;
-  slug: string;
-  shortDescription: string;
+export interface DoctorAvailability {
+  group: "LAKSHMI" | "OTHERS";
+  label: string;
+  remaining: number;
 }
 
 function refresh() {
@@ -80,10 +71,10 @@ export async function createAppointment(
   if (!parsed.success) {
     return { success: false, error: parsed.error.errors[0]?.message || "Invalid input" };
   }
-  const { slotId, date, fullName, phone, email, age, gender, patientType, typeId, doctorId } = parsed.data;
+  const { slotId, date, fullName, phone, age, gender, patientType, doctorGroup } = parsed.data;
   if (!slotId.startsWith(`${date}_`)) return { success: false, error: "Selected date is not available for booking" };
 
-  const created = store.createAppointment({ slotId, fullName, phone, email, age, gender, patientType, typeId, doctorId });
+  const created = store.createAppointment({ slotId, fullName, phone, age, gender, patientType, doctorGroup });
   if (!created.ok) return { success: false, error: created.error };
   const a = created.data;
   // The booking message (details, map, cancel and reschedule links) is built by the store and sent here.
@@ -93,16 +84,16 @@ export async function createAppointment(
   return { success: true, data: { confirmationToken: a.token, appointmentId: a.id, status: a.status } };
 }
 
-/** Separate treatment booking: no doctor to choose and no capacity limit. */
+/** Treatment booking: patient details and a slot only. It uses a slot place, but no doctor group. */
 export async function createTreatmentBooking(
   input: unknown
 ): Promise<ActionResult<{ confirmationToken: string; appointmentId: string; status: string }>> {
   const parsed = treatmentBookingSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.errors[0]?.message || "Invalid input" };
-  const { slotId, date, fullName, phone, email, treatmentId, notes } = parsed.data;
+  const { slotId, date, fullName, phone, age, gender } = parsed.data;
   if (!slotId.startsWith(`${date}_`)) return { success: false, error: "Selected date is not available for booking" };
 
-  const created = store.createAppointment({ kind: "TREATMENT", treatmentId, slotId, fullName, phone, email, notes });
+  const created = store.createAppointment({ kind: "TREATMENT", slotId, fullName, phone, age, gender });
   if (!created.ok) return { success: false, error: created.error };
   const a = created.data;
   deliver(created.outbox);
@@ -150,24 +141,9 @@ export async function getAppointmentTypes(): Promise<PublicType[]> {
   return store.listTypes({ activeOnly: true }).map(({ id, name, description }) => ({ id, name, description }));
 }
 
-/** Doctors a patient can choose from (published only; managed in the admin portal). */
-export async function getDoctorsForBooking(): Promise<PublicDoctor[]> {
-  return store
-    .listDoctors({ publishedOnly: true })
-    .sort((a, b) => Number(b.isSenior) - Number(a.isSenior) || a.sortOrder - b.sortOrder)
-    .map(({ id, name, designation, qualification, image }) => ({
-      id,
-      // Keep the senior consultant's requested display name consistent even when
-      // the admin portal has an older casing stored in its local data.
-      name: id === "dr-lakshmi-villa" ? "Dr. LAKSHMI KUMARI VILLA" : name,
-      designation,
-      qualification,
-      image,
-    }));
-}
-
-export async function getTreatmentsForBooking(): Promise<PublicTreatment[]> {
-  return store.listTreatments({ publishedOnly: true }).map(({ id, name, slug, shortDescription }) => ({ id, name, slug, shortDescription }));
+/** Remaining daily capacity of Dr. Lakshmi and Other Doctors on a date, so the booking form can grey out a full choice. */
+export async function getDoctorAvailability(dateStr: string): Promise<DoctorAvailability[]> {
+  return store.doctorCapacity(dateStr).map(({ group, label, remaining }) => ({ group, label, remaining }));
 }
 
 /** Patient edit via the private token link: details, type, date and time. */

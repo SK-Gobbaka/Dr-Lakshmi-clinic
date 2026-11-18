@@ -5,7 +5,8 @@ export const patientDetailsSchema = z.object({
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must be less than 100 characters")
-    .regex(/^[a-zA-Z\s.'-]+$/, "Name contains invalid characters"),
+    // any-language letters (Telugu, Hindi, ...), not just A-Z
+    .regex(/^[\p{L}\p{M}\s.'-]+$/u, "Name contains invalid characters"),
   phone: z
     .string()
     .regex(/^\d{10}$/, "Phone number must be exactly 10 digits"),
@@ -19,34 +20,19 @@ export const patientDetailsSchema = z.object({
     .int("Age must be a whole number")
     .min(1, "Age must be at least 1")
     .max(120, "Age must be at most 120"),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"], {
-    required_error: "Please select a gender",
-  }),
-  patientType: z.enum(["NEW", "FOLLOW_UP"], {
-    required_error: "Please select patient type",
-  }),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"], { errorMap: () => ({ message: "Please select a gender" }) }),
+  patientType: z.enum(["NEW", "FOLLOW_UP"], { errorMap: () => ({ message: "Please choose New or Follow-up" }) }),
 });
 
 export type PatientDetailsInput = z.infer<typeof patientDetailsSchema>;
 
 export const typeIdSchema = z.string().min(1, "Please select an appointment type");
 
-export const bookingSchema = patientDetailsSchema.extend({
+/** Online booking: only name, age, gender, phone, New/Follow-up, Dr. Lakshmi or Other Doctors, and a slot. */
+export const bookingSchema = patientDetailsSchema.pick({ fullName: true, phone: true, age: true, gender: true, patientType: true }).extend({
   slotId: z.string().min(1, "Please select a time slot"),
   date: z.string().min(1, "Please select a date"),
-  typeId: typeIdSchema,
-  doctorId: z.string().min(1, "Please choose the doctor you want to consult"),
-});
-
-/** Treatment booking: no doctor, no capacity, so only who, which treatment and when. */
-export const treatmentBookingSchema = z.object({
-  fullName: patientDetailsSchema.shape.fullName,
-  phone: patientDetailsSchema.shape.phone,
-  email: patientDetailsSchema.shape.email,
-  treatmentId: z.string().min(1, "Please choose a treatment"),
-  slotId: z.string().min(1, "Please select a time slot"),
-  date: z.string().min(1, "Please select a date"),
-  notes: z.string().max(500, "Notes must be 500 characters or fewer").optional(),
+  doctorGroup: z.enum(["LAKSHMI", "OTHERS"], { required_error: "Please choose Dr. Lakshmi or Other Doctors" }),
 });
 
 const optionalAge = z.preprocess(
@@ -87,4 +73,14 @@ export const cancelSchema = z.object({
 export const rescheduleSchema = z.object({
   token: z.string().min(1),
   newSlotId: z.string().min(1, "Please select a new time slot"),
+});
+
+/** The four patient fields on the booking form. */
+export const bookingDetailsSchema = patientDetailsSchema.pick({ fullName: true, phone: true, age: true, gender: true });
+export type BookingDetailsInput = z.infer<typeof bookingDetailsSchema>;
+
+/** Treatment booking: the same four patient fields and a time slot. No treatment, type or doctor to choose. */
+export const treatmentBookingSchema = patientDetailsSchema.pick({ fullName: true, phone: true, age: true, gender: true }).extend({
+  slotId: z.string().min(1, "Please select a time slot"),
+  date: z.string().min(1, "Please select a date"),
 });

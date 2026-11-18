@@ -52,7 +52,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
           <dl className={dl}>
             <dt className="text-text-secondary">Status</dt>
             <dd>
-              <StatusBadge status={a.status} />
+              <StatusBadge status={a.status} cancelledBy={a.cancelledBy} />
             </dd>
             <dt className="text-text-secondary">{a.kind === "TREATMENT" ? "Booking" : "Type"}</dt>
             <dd className="font-semibold">{appointmentLabel(a)}</dd>
@@ -68,6 +68,12 @@ export default async function AppointmentDetail({ params, searchParams }: { para
             <dd>{sessionNameFor(a.startTime)}</dd>
             <dt className="text-text-secondary">Persons</dt>
             <dd>{a.persons}</dd>
+            {a.tokenNumber && (
+              <>
+                <dt className="text-text-secondary">Token number</dt>
+                <dd className="font-semibold">{a.tokenNumber}</dd>
+              </>
+            )}
             <dt className="text-text-secondary">Reminder sent</dt>
             <dd>{a.reminderSent ? "Yes" : "No"}</dd>
             {a.notes && (
@@ -78,7 +84,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
             )}
             {a.cancelReason && (
               <>
-                <dt className="text-text-secondary">Cancel reason</dt>
+                <dt className="text-text-secondary">Cancellation reason</dt>
                 <dd>{a.cancelReason}</dd>
               </>
             )}
@@ -86,7 +92,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
         </section>
 
         <section className={`${card} p-4`}>
-          <h2 className="mb-3 font-heading text-lg font-semibold">Customer</h2>
+          <h2 className="mb-3 font-heading text-lg font-semibold">Patient details</h2>
           <dl className={dl}>
             <dt className="text-text-secondary">Name</dt>
             <dd>{a.fullName}</dd>
@@ -139,7 +145,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
             <form action={changeStatus} className="flex flex-wrap items-end gap-2">
               {hidden("cancel")}
               <label className="text-sm font-semibold">
-                Cancel reason
+                Cancellation reason
                 <input name="reason" required className={`${input} mt-1 sm:w-64`} />
               </label>
               <button className={btnDanger}>Cancel appointment</button>
@@ -174,31 +180,6 @@ export default async function AppointmentDetail({ params, searchParams }: { para
         </section>
       )}
 
-      <section className={`${card} mt-6 p-4`}>
-        <h2 className="mb-3 font-heading text-lg font-semibold">History</h2>
-        <ol className="space-y-2 text-sm">
-          {[...a.history].reverse().map((h, i) => (
-            <li key={i}>
-              <span className="text-text-secondary">{fmtStamp(h.at)}</span>
-              {" · "}
-              {h.kind === "block-redirect"
-                ? "date-block redirect"
-                : h.kind === "edit" || h.kind === "reschedule"
-                  ? h.kind === "reschedule"
-                    ? "rescheduled"
-                    : "edited"
-                  : h.from && h.from !== h.to
-                    ? `${h.from.toLowerCase()} to ${h.to.toLowerCase()}`
-                    : h.from
-                      ? "updated"
-                      : `created as ${h.to.toLowerCase()}`}
-              {" by "}
-              {h.by}
-              {h.note ? ` (${h.note})` : ""}
-            </li>
-          ))}
-        </ol>
-      </section>
     </>
   );
 }

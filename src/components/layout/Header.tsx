@@ -44,7 +44,7 @@ export function Header() {
         scrolled ? "bg-background/95 border-border backdrop-blur-md" : "bg-background border-transparent"
       )}
     >
-      <div className="mx-auto flex h-20 max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-24 max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-2" aria-label="Home">
           <Image
             src="/logo-graphic.png"
@@ -52,7 +52,7 @@ export function Header() {
             width={256}
             height={256}
             quality={100}
-            className="h-14 w-14 object-contain shrink-0"
+            className="h-[4.5rem] w-[4.5rem] object-contain shrink-0"
             priority
           />
           <Image
@@ -61,7 +61,7 @@ export function Header() {
             width={180}
             height={56}
             quality={100}
-            className="h-11 w-auto object-contain select-none"
+            className="h-14 w-auto object-contain select-none"
             priority
           />
         </Link>
@@ -107,7 +107,7 @@ export function Header() {
       </div>
 
       {isOpen && (
-        <div className="lg:hidden fixed inset-0 top-20 z-40 bg-background border-t border-border">
+        <div className="lg:hidden fixed inset-0 top-24 z-40 bg-background border-t border-border">
           <nav className="flex flex-col gap-1 p-6" aria-label="Mobile navigation">
             {navLinks.map((link) => (
               <Link

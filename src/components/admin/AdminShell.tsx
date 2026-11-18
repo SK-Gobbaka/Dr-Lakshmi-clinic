@@ -3,24 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Bell, CalendarDays, ChartColumn, ClipboardList, Clock, History, LayoutDashboard, LogOut, Menu, Stethoscope, Syringe, Tags, Users, X } from "lucide-react";
-import { NotificationBell } from "@/components/shared/NotificationBell";
+import { CalendarDays, ChartColumn, ClipboardList, Clock, History, LayoutDashboard, LogOut, Menu, Stethoscope, Syringe, Tags, Users, X } from "lucide-react";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/appointments", label: "Appointments", icon: ClipboardList },
   { href: "/admin/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/admin/sessions", label: "Sessions & capacity", icon: Clock },
+  { href: "/admin/sessions", label: "Session & capacity", icon: Clock },
   { href: "/admin/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/admin/treatments", label: "Treatments", icon: Syringe },
   { href: "/admin/statistics", label: "Statistics", icon: ChartColumn },
   { href: "/admin/types", label: "Appointment types", icon: Tags },
   { href: "/admin/patients", label: "Patients", icon: Users },
-  { href: "/admin/notifications", label: "Notifications", icon: Bell },
   { href: "/admin/audit", label: "Audit log", icon: History },
 ];
 
-export function AdminShell({ admin, unread, logout, children }: { admin: string; unread: number; logout: () => Promise<void>; children: React.ReactNode }) {
+export function AdminShell({ admin, logout, children }: { admin: string; logout: () => Promise<void>; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const active = (href: string) => (href === "/admin" ? path === "/admin" : path.startsWith(href));
@@ -72,7 +70,6 @@ export function AdminShell({ admin, unread, logout, children }: { admin: string;
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex-1" />
-          <NotificationBell endpoint="/admin/api/notifications" href="/admin/notifications" initialUnread={unread} />
           <span className="hidden text-sm text-text-secondary sm:inline">Signed in as {admin}</span>
           <form action={logout}>
             <button type="submit" className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-white px-3.5 text-sm font-semibold text-ink shadow-sm hover:border-primary/30 hover:bg-sand/50">

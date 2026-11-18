@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getSeniorDoctor, listDoctors } from "@/lib/local-store";
+import { HOSPITAL } from "@/lib/constants";
 import { SeniorConsultant } from "@/components/home/SeniorConsultant";
 
 export const metadata: Metadata = {
@@ -13,8 +14,8 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic"; // doctors are edited in the admin portal
 
 export default function DoctorsPage() {
-  const doctors = listDoctors({ publishedOnly: true });
   const senior = getSeniorDoctor();
+  const doctors = listDoctors({ publishedOnly: true }).filter((d) => d.id !== senior?.id);
   const teamCartoonSvg = (
     <svg className="h-10 w-20 text-[#1F7A63] inline-block align-middle mb-2 ml-1" viewBox="0 0 120 60" fill="none" stroke="currentColor" strokeWidth="1.8">
       {/* Left person */}
@@ -31,7 +32,7 @@ export default function DoctorsPage() {
 
   return (
     <div className="bg-transparent min-h-screen pb-0">
-      {/* Animating Senior Consultant Section */}
+      {/* Senior Consultant */}
       {senior && <SeniorConsultant doctor={senior} />}
 
       {/* Our Team Section */}
@@ -41,17 +42,15 @@ export default function DoctorsPage() {
           <div className="text-center mb-16 select-none">
             <div className="inline-block border-b-2 border-[#1F7A63] pb-2">
               <span className="font-heading text-xl font-bold text-[#1F7A63] uppercase tracking-widest leading-none">
-                Our Team
+                Our Doctors Team
               </span>
               {teamCartoonSvg}
             </div>
           </div>
 
-          {/* 12 Doctor grid */}
+          {/* Team: every published doctor except the senior consultant, who has the section above */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-[1000px] mx-auto">
             {doctors.map((doctor) => {
-              // Exclude senior consultant from the team list or keep all? The mockup shows 12 cards in team section.
-              // Let's render all 12 doctors in the grid.
               return (
                 <div
                   key={doctor.id}
@@ -105,7 +104,7 @@ export default function DoctorsPage() {
               Book Appointment
             </Link>
             <a
-              href="tel:+910000000000"
+              href={`tel:${HOSPITAL.phone}`}
               className="rounded-full border border-white px-8 py-3 text-xs font-bold text-white hover:bg-white/10 transition-all uppercase tracking-wider"
             >
               Call Now

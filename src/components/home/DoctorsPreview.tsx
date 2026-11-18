@@ -11,7 +11,7 @@ export function DoctorsPreview() {
     <section className="section bg-sand/50">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <h2 className="section-title">Our doctors</h2>
+          <h2 className="section-title">Our Doctors Team</h2>
           <Link
             href="/doctors"
             className="font-semibold text-primary underline underline-offset-4 hover:text-[#17604E]"

@@ -4,8 +4,6 @@ import { randomUUID } from "node:crypto";
 import { BOOKING_HOURS, HOSPITAL } from "./constants";
 import { formatLongDate, formatTime12Hour } from "./utils";
 import { doctors as seedDoctors } from "./data/doctors";
-import { treatments as seedTreatments } from "./data/treatments";
-import { TREATMENT_DETAILS } from "./data/treatment-details";
 import {
   addDaysUTC,
   formatDateForApi,
@@ -28,6 +26,13 @@ import {
 
 export type Status = "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 export const LIVE_STATUSES: Status[] = ["PENDING", "CONFIRMED"];
+
+/** The booking form offers two choices: Dr. Lakshmi, or any other doctor. Each has its own daily capacity. */
+export type DoctorGroup = "LAKSHMI" | "OTHERS";
+export const DOCTOR_GROUPS: DoctorGroup[] = ["LAKSHMI", "OTHERS"];
+export const OTHER_DOCTORS = "Other Doctors";
+export const DEFAULT_SLOT_CAPACITY = 25;
+const DEFAULT_DOCTOR_CAPS: Record<DoctorGroup, number> = { LAKSHMI: 25, OTHERS: 100 };
 
 export interface FieldChange {
   field: string;
@@ -61,6 +66,11 @@ export interface Appointment {
   kind: "CONSULTATION" | "TREATMENT";
   doctorId: string | null;
   doctorName: string | null; // snapshot, so history survives a doctor being removed
+  doctorGroup: DoctorGroup | null; // null for treatment bookings
+  typeName: string | null; // snapshot, so the record survives its appointment type being deleted
+  cancelledBy: "ADMIN" | "PATIENT" | null;
+  tokenNumber: number | null; // assigned once, when the appointment is marked completed
+  completedAt: string | null;
   treatmentId: string | null;
   treatmentName: string | null;
   persons: number;
@@ -100,30 +110,24 @@ export interface Doctor {
   sortOrder: number;
 }
 
+/** A treatment is a headline (title + image) with the sub-treatments listed under it. */
 export interface Treatment {
   id: string;
   slug: string;
   name: string;
-  category: "hair" | "skin" | "laser";
-  shortDescription: string;
-  description: string;
   image: string;
-  duration: string;
-  sessions: string;
-  benefits: string[];
-  suitableFor: string;
-  procedure: string;
-  aftercare: string;
+  subcategories: string[];
   published: boolean;
   sortOrder: number;
 }
 
+/** One bookable time slot, repeated every day (Mon-Sat). Kept under the old name "session" in the data file. */
 export interface SessionConfig {
   id: string;
-  name: string;
+  name: string; // "9:00 AM - 10:00 AM", generated from the times
   startTime: string; // HH:mm
   endTime: string;
-  capacity: number; // appointments accepted per day in this session
+  capacity: number; // appointments accepted per day in this slot
   active: boolean;
 }
 
@@ -164,8 +168,9 @@ interface Data {
   settings: Settings;
   doctors: Doctor[];
   treatments: Treatment[];
-  slotCaps: Record<string, number>; // hour start ("09:00") -> appointments allowed in that hour, every day
-  defaultCapacity?: number; // legacy per-slot capacity, only used to migrate sessions
+  tokenSeq: number; // last token number issued; only ever increases
+  doctorCaps: Record<DoctorGroup, number>; // appointments allowed per day for each doctor group
+  slotsV2: boolean; // true once the old morning/evening sessions were converted to individual time slots
 }
 
 export interface Outgoing {
@@ -216,6 +221,11 @@ function normalize(raw: Partial<Data>): Data {
         kind: legacy.kind ?? "CONSULTATION",
         doctorId: legacy.doctorId ?? null,
         doctorName: legacy.doctorName ?? null,
+        doctorGroup: legacy.doctorGroup ?? null,
+        typeName: legacy.typeName ?? null,
+        cancelledBy: legacy.cancelledBy ?? null,
+        tokenNumber: legacy.tokenNumber ?? null,
+        completedAt: legacy.completedAt ?? null,
         treatmentId: legacy.treatmentId ?? null,
         treatmentName: legacy.treatmentName ?? null,
       } as Appointment;
@@ -245,40 +255,43 @@ function normalize(raw: Partial<Data>): Data {
         published: true,
         sortOrder: i,
       })),
-    treatments:
-      raw.treatments ??
-      seedTreatments.map((x, i) => ({
-        id: x.id,
-        slug: x.slug,
-        name: x.name,
-        category: x.category,
-        shortDescription: x.shortDescription,
-        description: x.description,
-        image: x.image,
-        duration: x.duration ?? "",
-        sessions: TREATMENT_DETAILS[x.id]?.sessions ?? "",
-        benefits: x.benefits ?? [],
-        suitableFor: TREATMENT_DETAILS[x.id]?.suitableFor ?? "",
-        procedure: TREATMENT_DETAILS[x.id]?.procedure ?? "",
-        aftercare: TREATMENT_DETAILS[x.id]?.aftercare ?? "",
-        published: true,
-        sortOrder: i,
-      })),
-    slotCaps: raw.slotCaps ?? {},
-    defaultCapacity: raw.defaultCapacity,
+    // Treatments are now title + image + subcategories. Records from the old layout are dropped (the admin re-adds them).
+    treatments: (raw.treatments ?? []).filter((t) => Array.isArray((t as Partial<Treatment>).subcategories)),
+    tokenSeq: raw.tokenSeq ?? 0,
+    doctorCaps: { ...DEFAULT_DOCTOR_CAPS, ...(raw.doctorCaps ?? {}) },
+    slotsV2: !!raw.slotsV2,
   };
   if (d.appointmentTypes.length === 0) d.appointmentTypes = DEFAULT_TYPES.map((t, i) => ({ ...t, sortOrder: i }));
-  if (d.sessions.length === 0) {
-    // Migrate the old eight fixed one-hour slots: same total capacity as before.
-    const per = d.defaultCapacity ?? 2;
-    d.sessions = [
-      { id: "session-morning", name: "Morning", startTime: "09:00", endTime: "12:00", capacity: per * 3, active: true },
-      { id: "session-evening", name: "Evening", startTime: "17:00", endTime: "22:00", capacity: per * 5, active: true },
-    ];
-    // old per-slot capacity is now expressed by the session; keep explicit overrides only
+
+  if (!d.slotsV2 || d.sessions.length === 0) {
+    // One-time conversion: the old morning/evening sessions become one slot per hour, each with the default capacity.
+    const old: SessionConfig[] = d.sessions.length
+      ? d.sessions
+      : [
+          { id: "m", name: "Morning", startTime: "09:00", endTime: "12:00", capacity: 0, active: true },
+          { id: "e", name: "Evening", startTime: "17:00", endTime: "22:00", capacity: 0, active: true },
+        ];
+    d.sessions = old.flatMap((s) =>
+      sessionSlotTimes(s).map((t) => ({ id: `slot-${t.startTime.replace(":", "")}`, name: slotName(t.startTime, t.endTime), startTime: t.startTime, endTime: t.endTime, capacity: DEFAULT_SLOT_CAPACITY, active: s.active }))
+    );
+    d.slotsV2 = true;
+  }
+
+  const lakshmiId = (d.doctors.find((x) => x.isSenior) ?? d.doctors.find((x) => x.id === "dr-lakshmi-villa"))?.id;
+  for (const a of d.appointments) {
+    if (!a.doctorGroup && a.kind !== "TREATMENT") a.doctorGroup = a.doctorId && a.doctorId === lakshmiId ? "LAKSHMI" : "OTHERS";
+    if (a.status === "CANCELLED" && !a.cancelledBy) {
+      const last = [...a.history].reverse().find((h) => h.to === "CANCELLED");
+      a.cancelledBy = last?.by === "patient" ? "PATIENT" : "ADMIN";
+    }
+    if (a.tokenNumber) d.tokenSeq = Math.max(d.tokenSeq, a.tokenNumber);
   }
   return d;
 }
+
+const slotName = (start: string, end: string) => `${formatTime12Hour(start)} - ${formatTime12Hour(end)}`;
+/** Morning / Afternoon / Evening, only used to group slots on screen. */
+const periodOf = (startTime: string) => (toMin(startTime) < 720 ? "Morning" : toMin(startTime) < 1020 ? "Afternoon" : "Evening");
 
 function load(): Data {
   try {
@@ -342,7 +355,8 @@ const log = (d: Data, actor: string, action: string, summary: string, entityId?:
 export const slotKey = (date: string, startTime: string) => `${date}_${startTime}`;
 const isLive = (a: Appointment) => LIVE_STATUSES.includes(a.status);
 /** Treatment bookings have no capacity limit, so they never use up session or slot places. */
-const usesCapacity = (a: Appointment) => isLive(a) && a.kind !== "TREATMENT";
+/** A place is held by every appointment except a cancelled one: completed and no-show visits still used their slot. Treatment bookings count too (they just have no doctor group). */
+const usesCapacity = (a: Appointment) => a.status !== "CANCELLED";
 
 const siteUrl = () => process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 const links = (a: Appointment) => ({
@@ -363,6 +377,27 @@ export function listTypes(opts: { activeOnly?: boolean } = {}): AppointmentType[
 
 export function typeName(typeId: string | null, d = load()): string {
   return d.appointmentTypes.find((t) => t.id === typeId)?.name ?? "Not specified";
+}
+
+/**
+ * Deletes an appointment type. Appointments that used it keep its name (snapshot), so no record breaks.
+ * The last active type cannot be deleted because patients need one to book.
+ */
+export function deleteType(id: string, by: string): Result<void> {
+  return tx((d) => {
+    const t = d.appointmentTypes.find((x) => x.id === id);
+    if (!t) return fail("Appointment type not found");
+    if (t.active && d.appointmentTypes.filter((x) => x.active && x.id !== id).length === 0) return fail("At least one appointment type must stay active");
+    let kept = 0;
+    for (const a of d.appointments) {
+      if (a.typeId !== id) continue;
+      a.typeName = t.name;
+      kept++;
+    }
+    d.appointmentTypes = d.appointmentTypes.filter((x) => x.id !== id);
+    log(d, by, "type.delete", `Deleted appointment type "${t.name}" (${kept} existing appointment(s) keep its name)`, id);
+    return done(undefined);
+  });
 }
 
 export function saveType(
@@ -427,8 +462,7 @@ function sessionOf(startTime: string, sessions: SessionConfig[]): SessionConfig 
   return sessions.find((s) => s.active && inWin(s)) ?? sessions.find(inWin);
 }
 
-export const sessionLabel = (s: SessionConfig | undefined) =>
-  s ? `${s.name} (${formatTime12Hour(s.startTime)} - ${formatTime12Hour(s.endTime)})` : "Outside sessions";
+export const sessionLabel = (s: SessionConfig | undefined) => (s ? slotName(s.startTime, s.endTime) : "Outside time slots");
 
 export function sessionNameFor(startTime: string): string {
   return sessionLabel(sessionOf(startTime, load().sessions));
@@ -463,7 +497,7 @@ function slotsFor(date: string, d: Data): SlotView[] {
     for (const t of sessionSlotTimes(s)) {
       const id = slotKey(date, t.startTime);
       const o = d.slotOverrides[id] ?? {};
-      const cap = o.capacity ?? d.slotCaps[t.startTime]; // a date-specific limit wins over the every-day hour limit
+      const cap = o.capacity; // optional limit for this date only
       const booked = live.filter((a) => a.startTime === t.startTime).length;
       const room = Math.min(s.capacity - sessionBooked, cap === undefined ? Infinity : cap - booked);
       out.push({
@@ -472,7 +506,7 @@ function slotsFor(date: string, d: Data): SlotView[] {
         startTime: t.startTime,
         endTime: t.endTime,
         sessionId: s.id,
-        sessionName: s.name,
+        sessionName: periodOf(t.startTime),
         sessionCapacity: s.capacity,
         sessionBooked,
         slotCapacity: cap ?? null,
@@ -495,7 +529,7 @@ export function bookableSlots(date: string, ignoreId?: string, unlimited = false
   if (!isDateBookable(parseApiDate(date)) || blockedReason(date, d)) return [];
   const self = d.appointments.find((a) => a.id === ignoreId && isLive(a));
   // treatment bookings: no capacity limit, only closed/disabled slots are excluded
-  if (unlimited || self?.kind === "TREATMENT") return slotsFor(date, d).filter((s) => !s.disabled).map((s) => ({ ...s, remaining: 999 }));
+  if (unlimited) return slotsFor(date, d).filter((s) => !s.disabled).map((s) => ({ ...s, remaining: 999 }));
   return slotsFor(date, d)
     .filter((s) => !s.disabled)
     .map((s) => {
@@ -544,9 +578,9 @@ export function dayInfo(date: string, d = load()): DayInfo {
 function validateSessions(d: Data, next: SessionConfig[]): string | null {
   const active = next.filter((s) => s.active);
   for (const s of next) {
-    if (s.name.trim().length < 2) return "Session name must be at least 2 characters";
     if (!TIME_RE.test(s.startTime) || !TIME_RE.test(s.endTime)) return "Times must be in HH:mm format";
     if (toMin(s.startTime) >= toMin(s.endTime)) return `${s.name}: end time must be after start time`;
+    if (toMin(s.endTime) - toMin(s.startTime) > 60) return `${s.name}: a time slot can be at most 60 minutes long`;
     if (!Number.isInteger(s.capacity) || s.capacity < 1 || s.capacity > 500) return `${s.name}: capacity must be a whole number from 1 to 500`;
   }
   for (let i = 0; i < active.length; i++) {
@@ -573,29 +607,45 @@ function validateSessions(d: Data, next: SessionConfig[]): string | null {
   return null;
 }
 
+/** Adds or edits a bookable time slot. The name is generated from the times; capacity defaults to 25. */
 export function saveSession(
-  input: { id?: string; name: string; startTime: string; endTime: string; capacity: number; active?: boolean },
+  input: { id?: string; startTime: string; endTime: string; capacity?: number; active?: boolean },
   by: string
 ): Result<SessionConfig> {
   return tx((d) => {
     const existing = d.sessions.find((s) => s.id === input.id);
-    if (input.id && !existing) return fail("Session not found");
+    if (input.id && !existing) return fail("Time slot not found");
     const s: SessionConfig = existing
       ? { ...existing }
-      : { id: `session-${randomUUID().slice(0, 8)}`, name: "", startTime: "", endTime: "", capacity: 1, active: true };
-    s.name = input.name.trim();
+      : { id: `slot-${randomUUID().slice(0, 8)}`, name: "", startTime: "", endTime: "", capacity: DEFAULT_SLOT_CAPACITY, active: true };
     s.startTime = input.startTime;
     s.endTime = input.endTime;
-    s.capacity = input.capacity;
+    if (input.capacity !== undefined) s.capacity = input.capacity;
     if (input.active !== undefined) s.active = input.active;
-    if (d.sessions.some((x) => x.id !== s.id && x.name.toLowerCase() === s.name.toLowerCase())) return fail("A session with this name already exists");
+    if (!TIME_RE.test(s.startTime) || !TIME_RE.test(s.endTime)) return fail("Times must be in HH:mm format");
+    s.name = slotName(s.startTime, s.endTime);
+    if (d.sessions.some((x) => x.id !== s.id && x.startTime === s.startTime && x.endTime === s.endTime)) return fail("This time slot already exists");
     const next = existing ? d.sessions.map((x) => (x.id === s.id ? s : x)) : [...d.sessions, s];
-    if (!next.some((x) => x.active)) return fail("At least one session must stay active");
+    if (!next.some((x) => x.active)) return fail("At least one time slot must stay active");
     const err = validateSessions(d, next);
     if (err) return fail(err);
-    d.sessions = next;
-    log(d, by, existing ? "session.update" : "session.create", `${s.name} ${s.startTime}-${s.endTime}, capacity ${s.capacity}, ${s.active ? "active" : "inactive"}`, s.id);
+    d.sessions = next.sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
+    log(d, by, existing ? "slot.update" : "slot.create", `${s.name}, capacity ${s.capacity}, ${s.active ? "active" : "inactive"}`, s.id);
     return done(s);
+  });
+}
+
+export function deleteSession(id: string, by: string): Result<void> {
+  return tx((d) => {
+    const s = d.sessions.find((x) => x.id === id);
+    if (!s) return fail("Time slot not found");
+    const next = d.sessions.filter((x) => x.id !== id);
+    if (!next.some((x) => x.active)) return fail("At least one time slot must stay active");
+    const err = validateSessions(d, next); // refuses while upcoming appointments still use this slot
+    if (err) return fail(err);
+    d.sessions = next;
+    log(d, by, "slot.delete", `Deleted time slot ${s.name}`, id);
+    return done(undefined);
   });
 }
 
@@ -626,7 +676,8 @@ export function getByTokens(tokens: string[]): Appointment[] {
 
 /** What the appointment is for: the treatment name, or the consultation type. */
 export function appointmentLabel(a: Appointment, d = load()): string {
-  return a.kind === "TREATMENT" ? `Treatment: ${a.treatmentName ?? d.treatments.find((t) => t.id === a.treatmentId)?.name ?? "Not specified"}` : typeName(a.typeId, d);
+  if (a.kind === "TREATMENT") return a.treatmentName && a.treatmentName !== "Treatment" ? `Treatment: ${a.treatmentName}` : "Treatment";
+  return d.appointmentTypes.find((t) => t.id === a.typeId)?.name ?? a.typeName ?? "Not specified";
 }
 
 export function doctorLabel(a: Appointment): string {
@@ -710,6 +761,60 @@ export function markNotificationsRead(scope: { audience: "ADMIN" } | { audience:
   });
 }
 
+// ---------- doctor-wise capacity ----------
+
+/** Dr. Lakshmi is the senior consultant profile. */
+export function lakshmiDoctor(d = load()): Doctor | undefined {
+  return d.doctors.find((x) => x.published && x.isSenior) ?? d.doctors.find((x) => x.published && x.id === "dr-lakshmi-villa");
+}
+
+const groupBooked = (d: Data, date: string, g: DoctorGroup, ignoreId?: string) =>
+  d.appointments.filter((a) => usesCapacity(a) && a.date === date && a.doctorGroup === g && a.id !== ignoreId).length;
+
+export const doctorGroupLabel = (g: DoctorGroup) => (g === "LAKSHMI" ? "Dr. Lakshmi" : OTHER_DOCTORS);
+
+export interface DoctorCapacityRow {
+  group: DoctorGroup;
+  label: string;
+  doctors: string[];
+  capacity: number;
+  booked: number;
+  remaining: number;
+}
+
+/** Capacity and bookings of each doctor group on one date. Dr. Lakshmi is always first. */
+export function doctorCapacity(date: string, d = load()): DoctorCapacityRow[] {
+  const lakshmi = lakshmiDoctor(d);
+  return DOCTOR_GROUPS.map((group) => {
+    const booked = groupBooked(d, date, group);
+    const capacity = d.doctorCaps[group];
+    return {
+      group,
+      label: doctorGroupLabel(group),
+      doctors: group === "LAKSHMI" ? (lakshmi ? [lakshmi.name] : []) : d.doctors.filter((x) => x.published && x.id !== lakshmi?.id).map((x) => x.name),
+      capacity,
+      booked,
+      remaining: Math.max(0, capacity - booked),
+    };
+  });
+}
+
+/** Sets one group's daily capacity. Each group is independent: changing Dr. Lakshmi never touches Other Doctors. */
+export function setDoctorCapacity(group: DoctorGroup, capacity: number, by: string): Result<void> {
+  return tx((d) => {
+    if (!DOCTOR_GROUPS.includes(group)) return fail("Unknown doctor group");
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 1000) return fail("Capacity must be a whole number from 1 to 1000");
+    const today = formatDateForApi(todayIST());
+    const perDate = new Map<string, number>();
+    for (const a of d.appointments) if (usesCapacity(a) && a.doctorGroup === group && a.date >= today) perDate.set(a.date, (perDate.get(a.date) ?? 0) + 1);
+    const worst = [...perDate].find(([, n]) => n > capacity);
+    if (worst) return fail(`${doctorGroupLabel(group)} already has ${worst[1]} bookings on ${worst[0]}; capacity cannot go below that`);
+    d.doctorCaps[group] = capacity;
+    log(d, by, "doctor.capacity", `${doctorGroupLabel(group)} daily capacity set to ${capacity}`);
+    return done(undefined);
+  });
+}
+
 // ---------- appointments: writes ----------
 
 export interface NewAppointment {
@@ -722,14 +827,15 @@ export interface NewAppointment {
   patientType?: Appointment["patientType"];
   typeId?: string;
   kind?: Appointment["kind"];
-  doctorId?: string | null; // required for consultations
+  doctorGroup?: DoctorGroup | null; // booking form: Dr. Lakshmi or Other Doctors
+  doctorId?: string | null; // admin form: a specific doctor
   treatmentId?: string | null; // required for treatments
   persons?: number;
   notes?: string | null;
   status?: Extract<Status, "PENDING" | "CONFIRMED">; // admin only
 }
 
-function checkSlotOpen(d: Data, slotId: string, ignoreId?: string, admin = false, unlimited = false): Raw<SlotView> {
+function checkSlotOpen(d: Data, slotId: string, ignoreId?: string, admin = false, unlimited = false, group?: DoctorGroup | null): Raw<SlotView> {
   const [date, time] = slotId.split("_");
   const day = parseApiDate(date);
   const okDate = admin
@@ -748,8 +854,11 @@ function checkSlotOpen(d: Data, slotId: string, ignoreId?: string, admin = false
     // an appointment being moved does not count against its own session or slot
     if (sessionOf(self.startTime, d.sessions)?.id === slot.sessionId) room = Math.min(slot.sessionCapacity - slot.sessionBooked + 1, slot.slotCapacity === null ? Infinity : slot.slotCapacity - slot.booked + (self.startTime === slot.startTime ? 1 : 0));
   }
-  const noLimit = unlimited || d.appointments.find((a) => a.id === ignoreId)?.kind === "TREATMENT";
-  if (!noLimit && room <= 0) return fail(`${slot.sessionName} session is fully booked for this date. Please choose another.`);
+  const ignored = d.appointments.find((a) => a.id === ignoreId);
+  const noLimit = unlimited;
+  if (!noLimit && room <= 0) return fail("This time slot is fully booked. Please choose another.");
+  const grp = group ?? ignored?.doctorGroup;
+  if (!noLimit && grp && groupBooked(d, date, grp, ignoreId) >= d.doctorCaps[grp]) return fail(`${doctorGroupLabel(grp)} is fully booked on this date. Please choose another date or doctor.`);
   return done(slot);
 }
 
@@ -769,13 +878,34 @@ export function createAppointment(input: NewAppointment, by = "patient"): Result
   return tx((d, out) => {
     const admin = by !== "patient";
     const kind = input.kind ?? "CONSULTATION";
-    const treatment = kind === "TREATMENT" ? d.treatments.find((t) => t.id === input.treatmentId && t.published) : undefined;
-    if (kind === "TREATMENT" && !treatment) return fail("Please choose a treatment");
-    const type = kind === "TREATMENT" ? undefined : (d.appointmentTypes.find((t) => t.id === input.typeId) ?? d.appointmentTypes[0]);
+    const treatment = kind === "TREATMENT" && input.treatmentId ? d.treatments.find((t) => t.id === input.treatmentId && t.published) : undefined;
+    // No type chosen (booking form): New -> General Consultation, Follow-up -> Follow-up Visit, else the first active type.
+    const active = d.appointmentTypes.filter((t) => t.active);
+    const type =
+      kind === "TREATMENT"
+        ? undefined
+        : input.typeId
+          ? d.appointmentTypes.find((t) => t.id === input.typeId)
+          : (active.find((t) => t.id === (input.patientType === "FOLLOW_UP" ? "type-followup" : "type-general")) ?? active[0]);
     if (kind === "CONSULTATION" && (!type || !type.active)) return fail("Please select a valid appointment type");
-    const doctor = kind === "TREATMENT" ? undefined : d.doctors.find((x) => x.id === input.doctorId && x.published);
-    if (kind === "CONSULTATION" && !doctor) return fail("Please choose the doctor you want to consult");
-    const open = checkSlotOpen(d, input.slotId, undefined, admin, kind === "TREATMENT");
+
+    let doctor: Doctor | undefined;
+    let group: DoctorGroup | null = null;
+    if (kind === "CONSULTATION") {
+      const lakshmi = lakshmiDoctor(d);
+      if (input.doctorGroup === "LAKSHMI" || (!input.doctorGroup && input.doctorId && input.doctorId === lakshmi?.id)) {
+        if (!lakshmi) return fail("Dr. Lakshmi is not available for booking");
+        doctor = lakshmi;
+        group = "LAKSHMI";
+      } else if (input.doctorGroup === "OTHERS") {
+        group = "OTHERS";
+      } else if (input.doctorId) {
+        doctor = d.doctors.find((x) => x.id === input.doctorId && x.published);
+        if (!doctor) return fail("Please choose the doctor you want to consult");
+        group = "OTHERS";
+      } else return fail("Please choose the doctor you want to consult");
+    }
+    const open = checkSlotOpen(d, input.slotId, undefined, admin, false, group);
     if (!open.ok) return open;
     const slot = open.data;
 
@@ -802,9 +932,14 @@ export function createAppointment(input: NewAppointment, by = "patient"): Result
       typeId: type?.id ?? null,
       kind,
       doctorId: doctor?.id ?? null,
-      doctorName: doctor?.name ?? null,
+      doctorName: doctor?.name ?? (group === "OTHERS" ? OTHER_DOCTORS : null),
+      doctorGroup: group,
+      typeName: type?.name ?? null,
+      cancelledBy: null,
+      tokenNumber: null,
+      completedAt: null,
       treatmentId: treatment?.id ?? null,
-      treatmentName: treatment?.name ?? null,
+      treatmentName: treatment?.name ?? (kind === "TREATMENT" ? "Treatment" : null),
       persons: input.persons ?? 1,
       notes: input.notes?.trim() || null,
       status,
@@ -847,7 +982,7 @@ export function createAppointment(input: NewAppointment, by = "patient"): Result
 const startOf = (a: Appointment) => slotStartsAt(parseApiDate(a.date), a.startTime).getTime();
 
 const TRANSITIONS: Record<Status, Status[]> = {
-  PENDING: ["CONFIRMED", "CANCELLED", "NO_SHOW"],
+  PENDING: ["CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW"],
   CONFIRMED: ["COMPLETED", "CANCELLED", "NO_SHOW"],
   COMPLETED: [],
   CANCELLED: [],
@@ -873,7 +1008,16 @@ export function setStatus(id: string, to: Status, by: string, opts: { reason?: s
 
     const stamp = nowIso();
     a.history.push({ at: stamp, from: a.status, to, by, kind: "status", note: opts.reason?.trim() || undefined });
-    if (to === "CANCELLED") a.cancelReason = opts.reason?.trim() || "Cancelled by patient";
+    if (to === "CANCELLED") {
+      a.cancelReason = opts.reason?.trim() || "Cancelled by patient";
+      a.cancelledBy = opts.patient ? "PATIENT" : "ADMIN";
+    }
+    if (to === "COMPLETED") {
+      // Token numbers come from one counter that is only read and bumped inside this locked write,
+      // and the status check above rejects a second completion, so a token is never issued twice.
+      a.tokenNumber ??= ++d.tokenSeq;
+      a.completedAt = stamp;
+    }
     if (to !== "PENDING" && to !== "CONFIRMED") {
       a.needsAttention = false;
       a.attentionReason = null;
@@ -966,6 +1110,7 @@ export function updateAppointment(id: string, patch: AppointmentPatch, by: strin
       if (!t || !t.active) return fail("Please select a valid appointment type");
       changes.push({ field: "Appointment type", from: beforeType, to: t.name });
       a.typeId = t.id;
+      a.typeName = t.name;
     }
     if (patch.fullName !== undefined) set("fullName", patch.fullName.trim(), "Name");
     if (patch.phone !== undefined) set("phone", patch.phone, "Phone");
@@ -1053,18 +1198,24 @@ export function planBlock(date: string, overrides: Record<string, string> = {}, 
     });
   const takenSlot = new Map<string, number>();
   const takenSession = new Map<string, number>();
+  const takenGroup = new Map<string, number>();
   const room = (s: SlotView) =>
     Math.min(s.sessionCapacity - s.sessionBooked - (takenSession.get(`${s.date}|${s.sessionId}`) ?? 0), s.slotCapacity === null ? Infinity : s.slotCapacity - s.booked - (takenSlot.get(s.id) ?? 0));
 
   const pick = (a: Appointment, dates: string[], onlySlot?: string): PlanTarget | null => {
     const mySession = sessionOf(a.startTime, d.sessions)?.id;
     for (const day of dates) {
-      const unlimited = a.kind === "TREATMENT";
+      const unlimited = false;
+      const g = a.doctorGroup;
+      const gKey = `${day}|${g}`;
+      // the doctor group's own daily capacity must have room on that day too
+      if (!unlimited && g && d.doctorCaps[g] - groupBooked(d, day, g) - (takenGroup.get(gKey) ?? 0) <= 0) continue;
       const slots = slotsFor(day, d).filter((s) => !s.disabled && (unlimited || room(s) > 0) && (!onlySlot || s.id === onlySlot));
       if (slots.length === 0) continue;
       const rank = (s: SlotView) => (s.startTime === a.startTime ? 0 : s.sessionId === mySession ? 1 : 2) * 10_000 + Math.abs(toMin(s.startTime) - toMin(a.startTime));
       const s = [...slots].sort((p, q) => rank(p) - rank(q))[0];
       if (!unlimited) {
+        if (g) takenGroup.set(gKey, (takenGroup.get(gKey) ?? 0) + 1);
         takenSlot.set(s.id, (takenSlot.get(s.id) ?? 0) + 1);
         takenSession.set(`${s.date}|${s.sessionId}`, (takenSession.get(`${s.date}|${s.sessionId}`) ?? 0) + 1);
       }
@@ -1268,6 +1419,41 @@ export function stats() {
     bookedAsFollowUp: list.filter((a) => a.patientType === "FOLLOW_UP").length,
     recent: [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10),
   };
+}
+
+/** True when the appointment was moved to another date or time at least once (by the patient, the admin or a date block). */
+export const wasRescheduled = (a: Appointment) => a.history.some((h) => h.kind === "reschedule" || (h.kind === "block-redirect" && !!h.changes?.length));
+
+export interface CountSet {
+  appointments: number;
+  completed: number;
+  rescheduled: number;
+  cancelled: number;
+}
+
+const countSet = (list: Appointment[]): CountSet => ({
+  appointments: list.length,
+  completed: list.filter((a) => a.status === "COMPLETED").length,
+  rescheduled: list.filter(wasRescheduled).length,
+  cancelled: list.filter((a) => a.status === "CANCELLED").length,
+});
+
+/** Dashboard cards, counted straight from the appointment records. "Today" = appointments dated today (India time). */
+export function dashboardStats(): { overall: CountSet; today: CountSet } {
+  const all = load().appointments;
+  const today = formatDateForApi(todayIST());
+  return { overall: countSet(all), today: countSet(all.filter((a) => a.date === today)) };
+}
+
+/** The latest token number issued and who got it (null before the first completed appointment). */
+export function tokenInfo(): { last: number; next: number; latest: Appointment | null } {
+  const d = load();
+  const latest = d.appointments.filter((a) => a.tokenNumber).sort((x, y) => (y.tokenNumber ?? 0) - (x.tokenNumber ?? 0))[0] ?? null;
+  return { last: d.tokenSeq, next: d.tokenSeq + 1, latest };
+}
+
+export function getDoctorCaps(): Record<DoctorGroup, number> {
+  return load().doctorCaps;
 }
 
 // ---------- reminders (used by the cron route) ----------
@@ -1478,16 +1664,8 @@ export function getTreatment(idOrSlug: string): Treatment | null {
 export interface TreatmentInput {
   id?: string;
   name: string;
-  category: Treatment["category"];
-  shortDescription: string;
-  description: string;
   image?: string;
-  duration: string;
-  sessions: string;
-  benefits: string[];
-  suitableFor: string;
-  procedure: string;
-  aftercare: string;
+  subcategories: string[];
   published: boolean;
   sortOrder?: number;
 }
@@ -1502,12 +1680,11 @@ const slugify = (s: string) =>
 export function saveTreatment(input: TreatmentInput, by: string): Result<Treatment> {
   return tx((d) => {
     const name = input.name.trim();
-    if (name.length < 2 || name.length > 80) return fail("Treatment name must be 2 to 80 characters");
-    if (!["hair", "skin", "laser"].includes(input.category)) return fail("Choose a category");
-    if (input.shortDescription.trim().length < 10 || input.shortDescription.length > 200) return fail("The short description must be 10 to 200 characters");
-    if (input.description.length > 2000 || input.procedure.length > 1500 || input.suitableFor.length > 600 || input.aftercare.length > 1000) return fail("One of the detail fields is too long");
-    if (input.benefits.length > 10 || input.benefits.some((b) => b.length > 80)) return fail("Use up to 10 benefits of 80 characters or fewer");
-    if (d.treatments.some((x) => x.id !== input.id && x.name.toLowerCase() === name.toLowerCase())) return fail("A treatment with this name already exists");
+    if (name.length < 2 || name.length > 80) return fail("Treatment title must be 2 to 80 characters");
+    const subs = input.subcategories.map((x) => x.trim()).filter(Boolean);
+    if (subs.length > 30 || subs.some((x) => x.length > 80)) return fail("Use up to 30 subcategories of 80 characters or fewer");
+    if (new Set(subs.map((x) => x.toLowerCase())).size !== subs.length) return fail("Each subcategory must be different");
+    if (d.treatments.some((x) => x.id !== input.id && x.name.toLowerCase() === name.toLowerCase())) return fail("A treatment with this title already exists");
 
     let t = d.treatments.find((x) => x.id === input.id);
     if (input.id && !t) return fail("Treatment not found");
@@ -1519,36 +1696,20 @@ export function saveTreatment(input: TreatmentInput, by: string): Result<Treatme
         id: `treatment-${randomUUID().slice(0, 8)}`,
         slug,
         name,
-        category: input.category,
-        shortDescription: "",
-        description: "",
         image: "/logo-graphic.png",
-        duration: "",
-        sessions: "",
-        benefits: [],
-        suitableFor: "",
-        procedure: "",
-        aftercare: "",
+        subcategories: [],
         published: true,
         sortOrder: d.treatments.reduce((m, x) => Math.max(m, x.sortOrder), -1) + 1,
       };
       d.treatments.push(t);
     }
     t.name = name;
-    t.category = input.category;
-    t.shortDescription = input.shortDescription.trim();
-    t.description = input.description.trim();
     if (input.image) t.image = input.image;
-    t.duration = input.duration.trim();
-    t.sessions = input.sessions.trim();
-    t.benefits = input.benefits.map((b) => b.trim()).filter(Boolean);
-    t.suitableFor = input.suitableFor.trim();
-    t.procedure = input.procedure.trim();
-    t.aftercare = input.aftercare.trim();
+    t.subcategories = subs;
     t.published = input.published;
     if (input.sortOrder !== undefined && Number.isFinite(input.sortOrder)) t.sortOrder = input.sortOrder;
     for (const a of d.appointments) if (a.treatmentId === t.id) a.treatmentName = t.name;
-    log(d, by, created ? "treatment.create" : "treatment.update", `${created ? "Added" : "Updated"} treatment ${t.name}${t.published ? "" : " (unpublished)"}`, t.id);
+    log(d, by, created ? "treatment.create" : "treatment.update", `${created ? "Added" : "Updated"} treatment ${t.name} (${subs.length} subcategories)${t.published ? "" : " (unpublished)"}`, t.id);
     return done(t);
   });
 }
@@ -1565,37 +1726,6 @@ export function deleteTreatment(id: string, by: string): Result<void> {
   });
 }
 
-// ---------- capacity per hour ----------
-
-export function slotCaps(): Record<string, number> {
-  return load().slotCaps;
-}
-
-/** Limit for each hour of the day, applied every day. null/empty = no limit beyond the session total. */
-export function setSlotCaps(caps: Record<string, number | null>, by: string): Result<void> {
-  return tx((d) => {
-    const hours = new Set(d.sessions.flatMap((s) => sessionSlotTimes(s).map((t) => t.startTime)));
-    const today = formatDateForApi(todayIST());
-    const next = { ...d.slotCaps };
-    for (const [time, cap] of Object.entries(caps)) {
-      if (!hours.has(time)) return fail(`${time} is not an hour in any session`);
-      if (cap === null) {
-        delete next[time];
-        continue;
-      }
-      if (!Number.isInteger(cap) || cap < 1 || cap > 500) return fail(`${formatTime12Hour(time)}: capacity must be a whole number from 1 to 500`);
-      const perDate = new Map<string, number>();
-      for (const a of d.appointments) if (usesCapacity(a) && a.date >= today && a.startTime === time) perDate.set(a.date, (perDate.get(a.date) ?? 0) + 1);
-      const worst = [...perDate].find(([, n]) => n > cap);
-      if (worst) return fail(`${formatTime12Hour(time)} already has ${worst[1]} bookings on ${worst[0]}; capacity cannot go below that`);
-      next[time] = cap;
-    }
-    d.slotCaps = next;
-    log(d, by, "slots.capacity", `Hourly capacity: ${Object.entries(next).map(([t, c]) => `${t}=${c}`).join(", ") || "no limits"}`);
-    return done(undefined);
-  });
-}
-
 // ---------- emergency closure ----------
 
 /**
@@ -1607,16 +1737,21 @@ export function emergencyClose(date: string, reason: string, by: string): Result
     if (Number.isNaN(parseApiDate(date).getTime())) return fail("Choose a valid date");
     const why = reason.trim();
     if (!why) return fail("A reason is required");
-    if (d.blockedDates.some((b) => b.date === date)) return fail("That date is already blocked");
-    d.blockedDates.push({ date, reason: why });
-    d.blockedDates.sort((a, b) => a.date.localeCompare(b.date));
+    // An already-blocked date is fine: this still cancels whatever was left on it (e.g. appointments flagged by a plain block).
+    if (!d.blockedDates.some((b) => b.date === date)) {
+      d.blockedDates.push({ date, reason: why });
+      d.blockedDates.sort((a, b) => a.date.localeCompare(b.date));
+    }
 
+    // Every pending or confirmed appointment on the date, whatever filter or page the admin was looking at.
+    // One locked write: either all of them are cancelled and saved, or none are.
     const affected = d.appointments.filter((a) => isLive(a) && a.date === date);
     for (const a of affected) {
       const stamp = nowIso();
       const was = describe(a, d);
-      a.history.push({ at: stamp, from: a.status, to: "CANCELLED", by, kind: "status", note: `Clinic closed: ${why}` });
+      a.history.push({ at: stamp, from: a.status, to: "CANCELLED", by, kind: "status", note: `Cancelled by admin. Clinic closed: ${why}` });
       a.status = "CANCELLED";
+      a.cancelledBy = "ADMIN";
       a.cancelReason = `Clinic closed: ${why}`;
       a.needsAttention = false;
       a.attentionReason = null;

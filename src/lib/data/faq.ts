@@ -15,7 +15,7 @@ export const faqs: FAQItem[] = [
     id: "2",
     question: "Do I need to select a specific doctor?",
     answer:
-      "No. When you book online, our team assigns the most suitable specialist based on your concern. During your visit, you'll be connected with the right consultant for your needs.",
+      "Yes. When you book a consultation online, you choose the doctor you want to see. For treatment bookings (PRP, laser and similar), our team assigns the right specialist for you.",
   },
   {
     id: "3",

@@ -70,7 +70,7 @@ export function Footer() {
                 alt="Dr. Lakshmi Logo"
                 width={56}
                 height={56}
-                className="h-14 w-14 object-contain shrink-0 brightness-0 invert"
+                className="h-[4.5rem] w-[4.5rem] object-contain shrink-0 brightness-0 invert"
               />
               <Image
                 src="/logo-text.png"

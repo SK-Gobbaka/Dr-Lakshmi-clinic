@@ -1,7 +1,7 @@
-import { saveTypeAction, toggleTypeAction } from "@/actions/admin";
+import { deleteTypeAction, saveTypeAction, toggleTypeAction } from "@/actions/admin";
 import { requireAdmin } from "@/lib/admin-auth";
 import { listAppointments, listTypes } from "@/lib/local-store";
-import { Notice, PageTitle, btnPlain, btnPrimary, card, input, one, type SP } from "../../ui";
+import { Notice, PageTitle, btnDanger, btnPlain, btnPrimary, card, input, one, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export default async function TypesPage({ searchParams }: { searchParams: SP }) 
 
   return (
     <>
-      <PageTitle sub="Patients choose one of the active types when booking. Deactivating a type hides it from new bookings; existing appointments keep it.">Appointment types</PageTitle>
+      <PageTitle sub="Patients choose one of the active types when booking. Deactivating hides a type from new bookings. Deleting removes it, and appointments that used it keep its name.">Appointment types</PageTitle>
       <Notice notice={one(sp.notice)} error={one(sp.error)} />
 
       <div className="space-y-3">
@@ -23,11 +23,17 @@ export default async function TypesPage({ searchParams }: { searchParams: SP }) 
               <span className="text-text-secondary">
                 {all.filter((a) => a.typeId === t.id).length} appointment(s) · {t.active ? "Active" : "Inactive"}
               </span>
+              <div className="flex gap-2">
               <form action={toggleTypeAction}>
                 <input type="hidden" name="id" value={t.id} />
                 <input type="hidden" name="active" value={String(!t.active)} />
                 <button className={`${btnPlain} h-9`}>{t.active ? "Deactivate" : "Activate"}</button>
               </form>
+              <form action={deleteTypeAction}>
+                <input type="hidden" name="id" value={t.id} />
+                <button className={`${btnDanger} h-9`} aria-label={`Delete ${t.name}`}>Delete</button>
+              </form>
+              </div>
             </div>
             <form action={saveTypeAction} className="grid gap-3 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
               <input type="hidden" name="id" value={t.id} />

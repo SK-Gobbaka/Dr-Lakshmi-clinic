@@ -31,11 +31,12 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
   for (let d = 1; d <= daysInMonth; d++) cells.push(`${monthParam}-${String(d).padStart(2, "0")}`);
 
   const dayAppts = listAppointments()
-    .filter((a) => a.date === selected && a.status !== "CANCELLED")
+    .filter((a) => a.date === selected)
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
   const info = dayInfo(selected);
   const daySlots = listSlots(selected);
   const canBlock = !info.blocked && !info.holiday;
+  const liveLeft = dayAppts.filter((a) => a.status === "PENDING" || a.status === "CONFIRMED").length;
 
   return (
     <>
@@ -112,6 +113,14 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
           ) : null}
         </div>
         {info.blocked && <p className="mb-3 text-sm font-semibold text-danger">Blocked: {info.blocked}. Patients cannot book this date.</p>}
+        {info.blocked && liveLeft > 0 && (
+          <p className="mb-3 text-sm">
+            {liveLeft} appointment(s) are still active on this blocked date.{" "}
+            <Link href={`/admin/calendar/block?date=${selected}`} className="font-semibold text-primary underline">
+              Cancel all appointments for this date
+            </Link>
+          </p>
+        )}
         {daySlots.length === 0 ? (
           <p className="mb-3 text-sm text-text-secondary">No sessions on this day (Sunday is a holiday).</p>
         ) : (
@@ -134,7 +143,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
                   {a.id} · {a.fullName}
                 </Link>
                 <span className="text-text-secondary">{appointmentLabel(a)}</span>
-                <StatusBadge status={a.status} />
+                <StatusBadge status={a.status} cancelledBy={a.cancelledBy} />
               </li>
             ))}
           </ul>
