@@ -35,7 +35,8 @@ export default function DoctorsPage() {
       {/* Senior Consultant */}
       {senior && <SeniorConsultant doctor={senior} />}
 
-      {/* Our Team Section */}
+      {/* Our Doctors Team: hidden while the senior consultant is the only doctor */}
+      {doctors.length > 0 && (
       <section className="py-16 bg-white border-t border-gray-50">
         <div className="mx-auto max-w-[1200px] px-4">
           {/* Header */}
@@ -83,6 +84,7 @@ export default function DoctorsPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Blue CTA Banner */}
       <section className="bg-gradient-to-r from-[#1F7A63] to-[#17222B] text-white py-16 text-center select-none">
