@@ -9,7 +9,7 @@ export const patientDetailsSchema = z.object({
     .regex(/^[\p{L}\p{M}\s.'-]+$/u, "Name contains invalid characters"),
   phone: z
     .string()
-    .regex(/^\d{10}$/, "Phone number must be exactly 10 digits"),
+    .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"),
   email: z
     .string()
     .email("Invalid email format")
@@ -24,7 +24,7 @@ export const patientDetailsSchema = z.object({
   patientType: z.enum(["NEW", "FOLLOW_UP"], { errorMap: () => ({ message: "Please choose New or Follow-up" }) }),
 });
 
-export type PatientDetailsInput = z.infer<typeof patientDetailsSchema>;
+const turnstileToken = z.string().max(4096).optional();
 
 export const typeIdSchema = z.string().min(1, "Please select an appointment type");
 
@@ -33,6 +33,7 @@ export const bookingSchema = patientDetailsSchema.pick({ fullName: true, phone: 
   slotId: z.string().min(1, "Please select a time slot"),
   date: z.string().min(1, "Please select a date"),
   doctorGroup: z.enum(["LAKSHMI", "OTHERS"], { required_error: "Please choose Dr. Lakshmi or Other Doctors" }),
+  turnstileToken,
 });
 
 const optionalAge = z.preprocess(
@@ -63,11 +64,10 @@ export const adminCreateSchema = appointmentEditSchema.extend({
 
 export const updateMySchema = appointmentEditSchema.extend({ token: z.string().min(1) });
 
-export type BookingInput = z.infer<typeof bookingSchema>;
 
 export const cancelSchema = z.object({
   token: z.string().min(1),
-  reason: z.string().optional(),
+  reason: z.string().trim().max(300, "Please keep the reason under 300 characters").optional(),
 });
 
 export const rescheduleSchema = z.object({
@@ -83,4 +83,5 @@ export type BookingDetailsInput = z.infer<typeof bookingDetailsSchema>;
 export const treatmentBookingSchema = patientDetailsSchema.pick({ fullName: true, phone: true, age: true, gender: true }).extend({
   slotId: z.string().min(1, "Please select a time slot"),
   date: z.string().min(1, "Please select a date"),
+  turnstileToken,
 });

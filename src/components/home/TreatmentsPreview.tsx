@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { listTreatments } from "@/lib/local-store";
+import { listTreatments } from "@/lib/clinic";
+import { log } from "@/lib/logger";
 
 /** Published treatments from the admin portal; the procedures under each live on the Treatments page. */
-export function TreatmentsPreview() {
-  const treatments = listTreatments({ publishedOnly: true }).slice(0, 6);
+export async function TreatmentsPreview() {
+  const all = await listTreatments({ publishedOnly: true }).catch((err) => {
+    log.error("home.treatments_unavailable", err);
+    return [];
+  });
+  const treatments = all.slice(0, 6);
   if (treatments.length === 0) return null;
 
   return (

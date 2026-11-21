@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { unblockDateAction } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { appointmentLabel, dayInfo, listAppointments, listSlots } from "@/lib/local-store";
+import { requireOwner } from "@/lib/admin-auth";
+import { appointmentLabel, dayInfo, getData, listSlots } from "@/lib/clinic";
 import { formatDateForApi, todayIST } from "@/lib/slots";
 import { Empty, Notice, PageTitle, StatusBadge, btnPlain, btnPrimary, card, fmtDate, fmtTime, one, type SP } from "../../ui";
 
@@ -16,7 +16,7 @@ const TONE: Record<string, string> = {
 };
 
 export default async function CalendarPage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  await requireOwner();
   const sp = await searchParams;
   const today = formatDateForApi(todayIST());
   const monthParam = /^\d{4}-\d{2}$/.test(one(sp.m)) ? one(sp.m) : today.slice(0, 7);
@@ -30,11 +30,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
   const cells: (string | null)[] = Array(first.getUTCDay()).fill(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(`${monthParam}-${String(d).padStart(2, "0")}`);
 
-  const dayAppts = listAppointments()
-    .filter((a) => a.date === selected)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const info = dayInfo(selected);
-  const daySlots = listSlots(selected);
+  // Only this month's appointments (plus the selected day) are read, not the whole table.
+  const [data, daySlots] = await Promise.all([
+    getData({ dates: [selected], from: `${monthParam}-01`, to: `${monthParam}-${String(daysInMonth).padStart(2, "0")}` }),
+    listSlots(selected),
+  ]);
+  const dayAppts = data.appointments.filter((a) => a.date === selected).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const info = dayInfo(selected, data);
   const canBlock = !info.blocked && !info.holiday;
   const liveLeft = dayAppts.filter((a) => a.status === "PENDING" || a.status === "CONFIRMED").length;
 
@@ -61,7 +63,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
           ["holiday", "Holiday (Sunday)"],
         ].map(([k, l]) => (
           <span key={k} className="flex items-center gap-1.5">
-            <span className={`inline-block h-3.5 w-3.5 rounded border ${TONE[k]}`} />
+            <span className={`inline-block h-3.5 w-3.5 rounded border ${TONE[k]}`} aria-hidden />
             {l}
           </span>
         ))}
@@ -75,7 +77,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: SP 
         ))}
         {cells.map((date, i) => {
           if (!date) return <div key={`e${i}`} className="border-b border-r border-border" />;
-          const di = dayInfo(date);
+          const di = dayInfo(date, data);
           return (
             <Link
               key={date}

@@ -1,11 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "main": ".open-next/worker.js",
+  // Our own entry point: the OpenNext handler plus the scheduled reminder job (see worker.ts).
+  "main": "worker.ts",
   "name": "lakshmi-hospital",
   "compatibility_date": "2026-11-17",
-  "compatibility_flags": [
-    "global_fetch_strictly_public"
-  ],
+  // nodejs_compat is required by the Postgres driver and the crypto helpers.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -19,7 +19,15 @@
   "images": {
     "binding": "IMAGES"
   },
+  // Every 15 minutes: send reminders for appointments starting in about two hours. Needs the CRON_SECRET secret.
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "observability": {
     "enabled": true
   }
+  // Secrets are never written in this file. Set each one once with:  npx wrangler secret put NAME
+  // (DATABASE_URL, SESSION_SECRET, CRON_SECRET, and any optional connection listed in .env.example).
+  // The public website address can be added here under "vars" if you do not want it to follow the request host:
+  //   "vars": { "NEXT_PUBLIC_SITE_URL": "https://your-domain.example" }
 }

@@ -1,45 +1,51 @@
 import Link from "next/link";
 import { AlertTriangle, Download } from "lucide-react";
 import { changeStatus } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { QUICK_VIEWS, filterAppointments, filterDate, parseFilter } from "@/lib/admin-appointments";
-import { appointmentLabel, doctorLabel, listDoctors, listTypes, tokenInfo, wasRescheduled, type Appointment } from "@/lib/local-store";
-import { parseApiDate, slotStartsAt } from "@/lib/slots";
+import { requireAdminUser } from "@/lib/admin-auth";
+import { QUICK_VIEWS, filterDate, parseFilter, queryOf } from "@/lib/admin-appointments";
+import { appointmentLabel, doctorLabel, listDoctors, listTypes, searchAppointments, startOf, tokenInfo, wasRescheduled, STATUS_LABEL } from "@/lib/clinic";
 import { AddAppointmentDialog } from "@/components/admin/AddAppointmentDialog";
 import { DateFilter } from "@/components/admin/DateFilter";
 import { SubmitButton } from "@/components/admin/SubmitButton";
-import { Empty, Notice, PageTitle, StatusBadge, StatusLegend, btnPlain, btnPrimary, card, fmtDate, fmtStamp, fmtTime, input, one, type SP } from "../../ui";
+import { Empty, Notice, PageTitle, Pager, StatusBadge, StatusLegend, btnPlain, btnPrimary, card, fmtDate, fmtStamp, fmtTime, input, one, pageOf, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_SIZE = 50;
 const nowMs = () => Date.now();
-const startMs = (a: Appointment) => slotStartsAt(parseApiDate(a.date), a.startTime).getTime();
 
 export default async function AppointmentsPage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  const user = await requireAdminUser();
   const sp = await searchParams;
-  const filter = parseFilter({ view: one(sp.view), date: one(sp.date), q: one(sp.q) });
+  const filter = parseFilter({ view: one(sp.view), date: one(sp.date), q: one(sp.q), status: one(sp.status) });
   const attention = one(sp.attention) === "1";
+  const page = pageOf(sp.page);
   const now = nowMs();
   // Today is the default; a picked date replaces the quick filter.
   const activeView = filter.date ? null : filter.view;
 
-  const rows = filterAppointments(filter).filter((a) => !attention || a.needsAttention);
+  const [{ rows, total }, token, types, doctors] = await Promise.all([
+    searchAppointments(queryOf(filter, attention), page, PAGE_SIZE),
+    tokenInfo(),
+    listTypes({ activeOnly: true }),
+    listDoctors({ publishedOnly: true }),
+  ]);
   const day = filterDate(filter);
-  const token = tokenInfo();
 
   const qs = new URLSearchParams();
   if (filter.date) qs.set("date", filter.date);
   else qs.set("view", filter.view);
   if (filter.phone) qs.set("q", filter.phone);
+  if (filter.status) qs.set("status", filter.status);
+  if (attention) qs.set("attention", "1");
   const here = `/admin/appointments?${qs}`;
   const baseView = (v: string) => `/admin/appointments?view=${v}`;
 
   return (
     <>
       <PageTitle
-        sub={`${rows.length} shown${day ? ` for ${fmtDate(day)}` : ""}`}
-        action={<AddAppointmentDialog types={listTypes().filter((t) => t.active).map((t) => ({ id: t.id, name: t.name }))} doctors={listDoctors({ publishedOnly: true }).map((d) => ({ id: d.id, name: d.name }))} openByDefault={one(sp.add) === "1"} />}
+        sub={`${total} found${day ? ` for ${fmtDate(day)}` : ""}${filter.status ? `, ${STATUS_LABEL[filter.status].toLowerCase()} only` : ""}`}
+        action={<AddAppointmentDialog types={types.map((t) => ({ id: t.id, name: t.name }))} doctors={doctors.map((d) => ({ id: d.id, name: d.name }))} openByDefault={one(sp.add) === "1"} />}
       >
         Appointments
       </PageTitle>
@@ -78,101 +84,107 @@ export default async function AppointmentsPage({ searchParams }: { searchParams:
         {filter.date ? <input type="hidden" name="date" value={filter.date} /> : <input type="hidden" name="view" value={filter.view} />}
         <label className="text-sm font-semibold">
           Search by mobile number
-          <input name="q" type="search" inputMode="numeric" defaultValue={one(sp.q)} placeholder="10-digit number" className={`${input} mt-1 w-72`} />
+          <input name="q" type="search" inputMode="numeric" defaultValue={one(sp.q)} placeholder="10-digit number" className={`${input} mt-1 w-72 max-w-full`} />
         </label>
         <button type="submit" className={btnPrimary}>
           Search
         </button>
-        {(filter.phone || attention) && (
+        {(filter.phone || attention || filter.status) && (
           <Link href={filter.date ? `/admin/appointments?date=${filter.date}` : baseView(filter.view)} className={btnPlain}>
             Clear
           </Link>
         )}
       </form>
 
-      <div className="mb-3 flex justify-end">
-        <a href={`/admin/appointments/download?${qs}`} className={btnPlain} download>
-          <Download className="h-4 w-4" /> Download
-        </a>
-      </div>
+      {user.role === "OWNER" && (
+        <div className="mb-3 flex justify-end">
+          <a href={`/admin/appointments/download?${qs}`} className={btnPlain} download>
+            <Download className="h-4 w-4" aria-hidden /> Download
+          </a>
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <Empty>{filter.phone ? "No appointments match this search." : day ? "No appointments on this day." : "No appointments yet."}</Empty>
       ) : (
-        <div className={`${card} overflow-x-auto`}>
-          <table className="w-full min-w-[1080px] text-left text-sm">
-            <thead className="border-b border-border bg-sand/40">
-              <tr>
-                {["ID", "Customer", "Phone", "Appointment", "Type", "Doctor", "Status", "Token", "Booked", "Actions"].map((h) => (
-                  <th key={h} scope="col" className="px-3 py-2.5 font-semibold">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((a) => {
-                const live = a.status === "PENDING" || a.status === "CONFIRMED";
-                const started = startMs(a) <= now;
-                return (
-                  <tr key={a.id} className="hover:bg-sand/20">
-                    <td className="px-3 py-2.5">
-                      <Link href={`/admin/appointments/${a.id}`} className="font-semibold text-primary hover:underline">
-                        {a.id}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {a.fullName}
-                      <div className="text-xs text-text-secondary">{[a.age ? `${a.age}` : null, a.gender?.toLowerCase(), a.persons > 1 ? `${a.persons} persons` : null].filter(Boolean).join(", ") || "-"}</div>
-                    </td>
-                    <td className="px-3 py-2.5">{a.phone}</td>
-                    <td className="px-3 py-2.5">
-                      {fmtDate(a.date)}
-                      <div className="text-xs text-text-secondary">{fmtTime(a.startTime)}</div>
-                    </td>
-                    <td className="px-3 py-2.5">{appointmentLabel(a)}</td>
-                    <td className="px-3 py-2.5">{doctorLabel(a)}</td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge status={a.status} cancelledBy={a.cancelledBy} />
-                        {live &&
-                          (started ? (
-                            <form action={changeStatus}>
-                              <input type="hidden" name="id" value={a.id} />
-                              <input type="hidden" name="action" value="complete" />
-                              <input type="hidden" name="returnTo" value={here} />
-                              <SubmitButton pendingText="Saving..." className="h-7 rounded-lg border border-green-300 bg-green-50 px-2.5 text-xs font-semibold text-green-800 hover:bg-green-100 disabled:opacity-60">
+        <>
+          <div className={`${card} overflow-x-auto`}>
+            <table className="w-full min-w-[1080px] text-left text-sm">
+              <caption className="sr-only">Appointments</caption>
+              <thead className="border-b border-border bg-sand/40">
+                <tr>
+                  {["ID", "Customer", "Phone", "Appointment", "Type", "Doctor", "Status", "Token", "Booked", "Actions"].map((h) => (
+                    <th key={h} scope="col" className="px-3 py-2.5 font-semibold">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.map((a) => {
+                  const live = a.status === "PENDING" || a.status === "CONFIRMED";
+                  const started = startOf(a) <= now;
+                  return (
+                    <tr key={a.id} className="hover:bg-sand/20">
+                      <td className="px-3 py-2.5">
+                        <Link href={`/admin/appointments/${a.id}`} className="font-semibold text-primary hover:underline">
+                          {a.id}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {a.fullName}
+                        <div className="text-xs text-text-secondary">{[a.age ? `${a.age}` : null, a.gender?.toLowerCase(), a.persons > 1 ? `${a.persons} persons` : null].filter(Boolean).join(", ") || "-"}</div>
+                      </td>
+                      <td className="px-3 py-2.5">{a.phone}</td>
+                      <td className="px-3 py-2.5">
+                        {fmtDate(a.date)}
+                        <div className="text-xs text-text-secondary">{fmtTime(a.startTime)}</div>
+                      </td>
+                      <td className="px-3 py-2.5">{appointmentLabel(a)}</td>
+                      <td className="px-3 py-2.5">{doctorLabel(a)}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge status={a.status} cancelledBy={a.cancelledBy} />
+                          {live &&
+                            (started ? (
+                              <form action={changeStatus}>
+                                <input type="hidden" name="id" value={a.id} />
+                                <input type="hidden" name="action" value="complete" />
+                                <input type="hidden" name="returnTo" value={here} />
+                                <SubmitButton pendingText="Saving..." className="h-7 rounded-lg border border-green-300 bg-green-50 px-2.5 text-xs font-semibold text-green-800 hover:bg-green-100 disabled:opacity-60">
+                                  Completed
+                                </SubmitButton>
+                              </form>
+                            ) : (
+                              <button type="button" disabled title="Can be marked Completed once the appointment time has started" className="h-7 cursor-not-allowed rounded-lg border border-border bg-gray-50 px-2.5 text-xs font-semibold text-text-secondary/60">
                                 Completed
-                              </SubmitButton>
-                            </form>
-                          ) : (
-                            <button type="button" disabled title="Can be marked Completed once the appointment time has started" className="h-7 cursor-not-allowed rounded-lg border border-border bg-gray-50 px-2.5 text-xs font-semibold text-text-secondary/60">
-                              Completed
-                            </button>
-                          ))}
-                      </div>
-                      {wasRescheduled(a) && <div className="mt-1 text-xs font-semibold text-primary">Rescheduled</div>}
-                      {a.needsAttention && (
-                        <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-800">
-                          <AlertTriangle className="h-3 w-3" /> Needs handling
+                              </button>
+                            ))}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 font-semibold" data-testid={`token-${a.id}`}>
-                      {a.tokenNumber ?? "-"}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-text-secondary">{fmtStamp(a.createdAt)}</td>
-                    <td className="px-3 py-2.5">
-                      <Link href={`/admin/appointments/${a.id}`} className={`${btnPlain} h-8 px-3`}>
-                        {a.status === "PENDING" ? "Review" : "Open"}
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                        {wasRescheduled(a) && <div className="mt-1 text-xs font-semibold text-primary">Rescheduled</div>}
+                        {a.needsAttention && (
+                          <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-800">
+                            <AlertTriangle className="h-3 w-3" aria-hidden /> Needs handling
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold" data-testid={`token-${a.id}`}>
+                        {a.tokenNumber ?? "-"}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-text-secondary">{fmtStamp(a.createdAt)}</td>
+                      <td className="px-3 py-2.5">
+                        <Link href={`/admin/appointments/${a.id}`} className={`${btnPlain} h-8 px-3`}>
+                          {a.status === "PENDING" ? "Review" : "Open"}
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} total={total} pageSize={PAGE_SIZE} href={(n) => `${here}&page=${n}`} />
+        </>
       )}
     </>
   );

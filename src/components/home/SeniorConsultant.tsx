@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef } from "react";
-import Image from "next/image";
 import { motion, AnimatePresence, useInView } from "framer-motion";
+import { Photo } from "@/components/shared/Photo";
 interface SeniorDoctor {
   name: string;
   image: string;
@@ -47,14 +47,7 @@ export function SeniorConsultant({ doctor }: { doctor: SeniorDoctor }) {
             transition={{ type: "spring", stiffness: 70, damping: 20 }}
             className="relative w-48 h-48 sm:w-56 sm:h-56 rounded-full overflow-hidden border-[4px] border-[#1F7A63] shadow-lg shadow-cyan-500/20 shrink-0 select-none"
           >
-            <Image
-              src={doctor.image}
-              alt={doctor.name}
-              fill
-              className="object-cover"
-              sizes="(max-width: 768px) 192px, 224px"
-              priority
-            />
+            <Photo src={doctor.image} alt={doctor.name} fallbackName={doctor.name} fill className="object-cover" sizes="(max-width: 768px) 192px, 224px" priority />
           </motion.div>
 
           {/* Details Content (Appears sideways) */}

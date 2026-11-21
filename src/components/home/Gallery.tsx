@@ -1,25 +1,24 @@
-import Image from "next/image";
-import { galleryItems } from "@/lib/data/gallery";
+import { Photo } from "@/components/shared/Photo";
+import { listGallery } from "@/lib/content";
+import { log } from "@/lib/logger";
 
-export function Gallery() {
+/** Photos the clinic uploaded under Admin > Gallery. The section is left out until there is at least one. */
+export async function Gallery() {
+  const items = await listGallery({ publishedOnly: true }).catch((err) => {
+    log.error("home.gallery_unavailable", err);
+    return [];
+  });
+  if (items.length === 0) return null;
   return (
     <section className="section" id="gallery">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
         <h2 className="section-title">Inside the clinic</h2>
 
         <div className="mt-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {galleryItems.map((item) => (
+          {items.map((item) => (
             <figure key={item.id} className="relative aspect-square overflow-hidden rounded-xl bg-sand">
-              <Image
-                src={item.image}
-                alt={item.title}
-                fill
-                className="object-cover"
-                sizes="(max-width: 768px) 50vw, 25vw"
-              />
-              <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3 pt-8 text-sm font-semibold text-white">
-                {item.title}
-              </figcaption>
+              <Photo src={item.image} alt={item.title} fallbackName={item.title} fill className="object-cover" sizes="(max-width: 768px) 50vw, 25vw" />
+              <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3 pt-8 text-sm font-semibold text-white">{item.title}</figcaption>
             </figure>
           ))}
         </div>

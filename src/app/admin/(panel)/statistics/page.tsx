@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/admin-auth";
-import { analysis, type Trend } from "@/lib/local-store";
+import { requireOwner } from "@/lib/admin-auth";
+import { analysis, type Trend } from "@/lib/clinic";
 import { PageTitle, btnPlain, btnPrimary, card, input, one, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
@@ -97,10 +97,10 @@ function Pie({ title, parts }: { title: string; parts: { label: string; value: n
 }
 
 export default async function StatisticsPage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  await requireOwner();
   const asked = one((await searchParams).range);
   const range = RANGES.find(([v]) => v === asked)?.[0] ?? "30";
-  const a = analysis(Number(range));
+  const a = await analysis(Number(range));
   const doctorMax = Math.max(1, ...a.byDoctor.map((d) => d.value));
 
   return (

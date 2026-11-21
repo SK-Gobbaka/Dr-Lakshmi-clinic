@@ -7,7 +7,8 @@ import { Clock, ChevronLeft, ChevronRight, Loader2, CheckCircle, MapPin, Calenda
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { HOSPITAL } from "@/lib/constants";
+import type { SiteSettings } from "@/lib/clinic/types";
+import { fullAddress, hasMapLink, mapsUrl, telHref } from "@/lib/site-info";
 import { bookingDetailsSchema, type BookingDetailsInput } from "@/lib/validations";
 import { formatTime12Hour, cn } from "@/lib/utils";
 import {
@@ -16,15 +17,23 @@ import {
   getDoctorAvailability,
   createAppointment,
   createTreatmentBooking,
-  getAppointmentByToken,
+  rescheduleAppointment,
 } from "@/actions/appointment";
 import type { AvailableSlot, DoctorAvailability } from "@/actions/appointment";
+import { Turnstile } from "./Turnstile";
 
 interface BookingWizardProps {
-  initialToken?: string;
   mode?: "book" | "reschedule" | "treatment";
   rescheduleToken?: string;
+  /** Clinic contact details (hours, address, phone) shown on the screens; anything empty is left out. */
+  site: SiteSettings;
+  /** Set when the bot check is switched on. */
+  turnstileSiteKey?: string;
+  /** True when booking messages are really sent over WhatsApp. */
+  messaging: boolean;
 }
+
+const NETWORK_ERROR = "We could not reach the server. Please check your connection and try again.";
 
 const PATIENT_TYPES = [
   { id: "NEW", label: "New", hint: "First visit to the clinic" },
@@ -40,14 +49,16 @@ const fieldBox =
   "w-full rounded-full border border-gray-200 px-6 py-4 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition-all shadow-[0_0_12px_rgba(20,184,166,0.04)] bg-white text-text-primary font-medium";
 const heading = "text-[#1F7A63] font-bold text-base uppercase tracking-wider";
 
-export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: BookingWizardProps) {
+export function BookingWizard({ mode = "book", rescheduleToken, site, turnstileSiteKey, messaging }: BookingWizardProps) {
   const isTreatment = mode === "treatment";
-  const [step, setStep] = useState(initialToken ? 3 : 1);
+  const [step, setStep] = useState(1);
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [slots, setSlots] = useState<AvailableSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
-  const [confirmationToken, setConfirmationToken] = useState(initialToken || "");
+  const [confirmationToken, setConfirmationToken] = useState("");
+  const [humanToken, setHumanToken] = useState("");
+  const [humanReset, setHumanReset] = useState(0);
   const [error, setErrorText] = useState("");
   const [errorTick, setErrorTick] = useState(0);
   // Bumps a counter on every call so the same message shown twice still scrolls into view.
@@ -58,6 +69,7 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
   const errorRef = useRef<HTMLDivElement>(null);
   const [isPending, startTransition] = useTransition();
   const [loadingDates, setLoadingDates] = useState(true);
+  const [datesFailed, setDatesFailed] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [patientType, setPatientType] = useState<"NEW" | "FOLLOW_UP" | "">("");
   const [doctorGroup, setDoctorGroup] = useState<"LAKSHMI" | "OTHERS" | "">("");
@@ -72,24 +84,35 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
 
   const loadDates = useCallback(async () => {
     setLoadingDates(true);
-    const result = await getAvailableDates();
-    if (result.success) setDates(result.data);
+    setDatesFailed(false);
+    try {
+      const result = await getAvailableDates();
+      if (result.success) setDates(result.data);
+      else setDatesFailed(true);
+    } catch {
+      setDatesFailed(true);
+    }
     setLoadingDates(false);
   }, []);
 
   /** Slots and doctor capacity always come from the server, so admin changes and other bookings show up. */
   const loadSlots = useCallback(
-    async (date: string) => {
+    async (date: string, keepMessage = false) => {
       setLoadingSlots(true);
-      setError("");
-      const [result, avail] = await Promise.all([getAvailableSlots(date, rescheduleToken), mode === "book" ? getDoctorAvailability(date) : Promise.resolve([])]);
-      setDoctorAvail(avail);
-      if (result.success) {
-        setSlots(result.data);
-        setSelectedSlot((cur) => (cur && result.data.some((s) => s.id === cur.id) ? (result.data.find((s) => s.id === cur.id) ?? null) : null));
-        if (result.data.length === 0) setError("No availability for this date. Please select another date.");
-      } else {
-        setError(result.error);
+      if (!keepMessage) setError(""); // after a refused booking the refusal must stay on screen while the slots refresh
+      try {
+        const [result, avail] = await Promise.all([getAvailableSlots(date, rescheduleToken), mode === "book" ? getDoctorAvailability(date) : Promise.resolve([])]);
+        setDoctorAvail(avail);
+        if (result.success) {
+          setSlots(result.data);
+          setSelectedSlot((cur) => (cur && result.data.some((s) => s.id === cur.id) ? (result.data.find((s) => s.id === cur.id) ?? null) : null));
+          if (result.data.length === 0) setError("No availability for this date. Please select another date.");
+        } else {
+          setError(result.error);
+          setSlots([]);
+        }
+      } catch {
+        setError(NETWORK_ERROR);
         setSlots([]);
       }
       setLoadingSlots(false);
@@ -101,16 +124,6 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
     const t = setTimeout(loadDates, 0);
     return () => clearTimeout(t);
   }, [loadDates]);
-
-  useEffect(() => {
-    if (initialToken) {
-      getAppointmentByToken(initialToken)
-        .then((apt) => {
-          if (apt) setConfirmationToken(apt.confirmationToken);
-        })
-        .catch(() => {});
-    }
-  }, [initialToken]);
 
   // The form is long: without this the message sits off-screen and the button looks dead.
   useEffect(() => {
@@ -130,6 +143,7 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
     e.preventDefault();
     if (!selectedSlot) return setError("Please select a time slot first.");
     if (mode === "reschedule") return handleConfirm();
+    if (turnstileSiteKey && !humanToken) return setError("Please complete the security check below, then try again.");
     if (isTreatment) return form.handleSubmit(() => handleConfirm(), (errs) => setError(Object.values(errs)[0]?.message ?? "Please check your details."))(e);
     if (!patientType) return setError("Please choose New or Follow-up.");
     if (!doctorGroup) return setError("Please choose Dr. Lakshmi or Other Doctors.");
@@ -158,36 +172,44 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
 
     startTransition(async () => {
       setError("");
-      if (mode === "reschedule" && rescheduleToken) {
-        const { rescheduleAppointment } = await import("@/actions/appointment");
-        const result = await rescheduleAppointment({ token: rescheduleToken, newSlotId: selectedSlot.id });
+      try {
+        if (mode === "reschedule" && rescheduleToken) {
+          const result = await rescheduleAppointment({ token: rescheduleToken, newSlotId: selectedSlot.id });
+          if (result.success) {
+            setConfirmationToken(result.data.confirmationToken);
+            setStep(3);
+          } else {
+            setError(result.error);
+            loadSlots(selectedDate, true);
+          }
+          return;
+        }
+
+        const values = form.getValues();
+        const result = isTreatment
+          ? await createTreatmentBooking({ ...values, slotId: selectedSlot.id, date: selectedDate, turnstileToken: humanToken })
+          : await createAppointment({ ...values, patientType, doctorGroup, slotId: selectedSlot.id, date: selectedDate, turnstileToken: humanToken });
         if (result.success) {
           setConfirmationToken(result.data.confirmationToken);
+          setBooked({
+            id: result.data.appointmentId,
+            status: result.data.status,
+            typeLabel: isTreatment ? "Treatment" : (PATIENT_TYPES.find((t) => t.id === patientType)?.label ?? ""),
+            doctorLabel: isTreatment ? "" : (DOCTOR_CHOICES.find((d) => d.group === doctorGroup)?.label ?? ""),
+            name: values.fullName,
+          });
           setStep(3);
         } else {
           setError(result.error);
-          loadSlots(selectedDate);
+          loadSlots(selectedDate, true); // someone else may have taken the last place: show the current availability
         }
-        return;
-      }
-
-      const values = form.getValues();
-      const result = isTreatment
-        ? await createTreatmentBooking({ ...values, slotId: selectedSlot.id, date: selectedDate })
-        : await createAppointment({ ...values, patientType, doctorGroup, slotId: selectedSlot.id, date: selectedDate });
-      if (result.success) {
-        setConfirmationToken(result.data.confirmationToken);
-        setBooked({
-          id: result.data.appointmentId,
-          status: result.data.status,
-          typeLabel: isTreatment ? "Treatment" : (PATIENT_TYPES.find((t) => t.id === patientType)?.label ?? ""),
-          doctorLabel: isTreatment ? "" : (DOCTOR_CHOICES.find((d) => d.group === doctorGroup)?.label ?? ""),
-          name: values.fullName,
-        });
-        setStep(3);
-      } else {
-        setError(result.error);
-        loadSlots(selectedDate); // someone else may have taken the last place: show the current availability
+      } catch {
+        // The booking may or may not have gone through: say so instead of leaving the form looking frozen.
+        setError(`${NETWORK_ERROR} If you already received a booking message, your appointment is saved.`);
+      } finally {
+        // a bot-check token works once: ask for a new one after every attempt
+        setHumanToken("");
+        setHumanReset((n) => n + 1);
       }
     });
   };
@@ -226,15 +248,17 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
           {/* Step 1: calendar */}
           {step === 1 && (
             <motion.div key="calendar-step" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
-              <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm border border-gray-100 rounded-2xl p-6 shadow-sm max-w-lg mx-auto">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-[#1F7A63]">
-                  <Clock className="h-7 w-7" />
+              {(site.workingHours || site.closedDay) && (
+                <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm border border-gray-100 rounded-2xl p-6 shadow-sm max-w-lg mx-auto">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-[#1F7A63]">
+                    <Clock className="h-7 w-7" aria-hidden />
+                  </div>
+                  <div className="text-left">
+                    {site.workingHours && <p className="font-heading font-bold text-text-primary text-base leading-snug">{site.workingHours}</p>}
+                    {site.closedDay && <p className="text-sm font-semibold text-text-secondary mt-0.5">{site.closedDay}</p>}
+                  </div>
                 </div>
-                <div className="text-left">
-                  <p className="font-heading font-bold text-text-primary text-base leading-snug">{HOSPITAL.workingHours.weekdays}</p>
-                  <p className="text-sm font-semibold text-text-secondary mt-0.5">{HOSPITAL.workingHours.sunday}</p>
-                </div>
-              </div>
+              )}
 
               <div className="max-w-2xl mx-auto">
                 <div className="relative -mb-7 z-20 flex justify-between px-6">
@@ -263,7 +287,15 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
                     </button>
                   </div>
 
-                  {loadingDates ? (
+                  {datesFailed ? (
+                    <div role="alert" className="py-10 text-center text-sm text-text-secondary">
+                      <p className="font-semibold text-text-primary">We could not load the available dates.</p>
+                      <p className="mt-1">Please check your connection{site.phone ? " or call the clinic" : ""}.</p>
+                      <button type="button" onClick={loadDates} className="mt-4 rounded-full border-2 border-[#1F7A63] px-6 py-2 text-xs font-bold uppercase tracking-wider text-[#1F7A63] hover:bg-[#1F7A63] hover:text-white">
+                        Try again
+                      </button>
+                    </div>
+                  ) : loadingDates ? (
                     <div className="grid grid-cols-7 gap-2 text-center">
                       {Array.from({ length: 35 }).map((_, i) => (
                         <div key={i} className="h-9 w-9 sm:h-11 sm:w-11 rounded-full bg-gray-50 animate-pulse mx-auto" />
@@ -306,7 +338,15 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
                             buttonDisabled = false;
                           } else dayClass += "text-text-secondary/40 cursor-not-allowed";
                           return (
-                            <button key={`day-${dateStr}`} type="button" disabled={buttonDisabled} onClick={() => handleDateSelect(dateStr)} className={dayClass}>
+                            <button
+                              key={`day-${dateStr}`}
+                              type="button"
+                              disabled={buttonDisabled}
+                              onClick={() => handleDateSelect(dateStr)}
+                              className={dayClass}
+                              aria-label={`${format(cell, "EEEE d MMMM yyyy")}${isTodayDate ? ", today" : ""}${isBookable ? ", available" : isSun ? ", closed" : ", not available"}`}
+                              aria-current={isTodayDate ? "date" : undefined}
+                            >
                               {cell.getDate()}
                             </button>
                           );
@@ -501,6 +541,8 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
                   </>
                 )}
 
+                {mode !== "reschedule" && turnstileSiteKey && <Turnstile siteKey={turnstileSiteKey} onToken={setHumanToken} resetKey={humanReset} />}
+
                 <div className="pt-6">
                   <button
                     type="submit"
@@ -534,8 +576,12 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
               </h2>
               <p className="mt-2 text-sm text-text-secondary font-medium">
                 {booked?.status === "PENDING"
-                  ? "Your appointment is pending. You will get a notification here and on WhatsApp as soon as the clinic confirms it."
-                  : "A confirmation details notification is being sent to WhatsApp"}
+                  ? messaging
+                    ? "Your appointment is pending. You will get a WhatsApp message as soon as the clinic confirms it."
+                    : "Your appointment is pending until the clinic confirms it."
+                  : messaging
+                    ? "A confirmation message is being sent to your WhatsApp number."
+                    : "Please note your appointment ID below."}
               </p>
 
               <div className="mt-8 rounded-2xl bg-gray-50/70 border border-gray-100 p-6 text-left space-y-4">
@@ -559,22 +605,30 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
                     {selectedSlot && formatTime12Hour(selectedSlot.startTime)} - {selectedSlot && formatTime12Hour(selectedSlot.endTime)}
                   </span>
                 </div>
-                <div className="flex items-start gap-3 text-text-primary text-sm font-semibold">
-                  <MapPin className="h-4.5 w-4.5 text-[#1F7A63] mt-0.5 shrink-0" />
-                  <span className="leading-relaxed">{HOSPITAL.address.full}</span>
-                </div>
+                {fullAddress(site) && (
+                  <div className="flex items-start gap-3 text-text-primary text-sm font-semibold">
+                    <MapPin className="h-4.5 w-4.5 text-[#1F7A63] mt-0.5 shrink-0" aria-hidden />
+                    <span className="leading-relaxed">{fullAddress(site)}</span>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                <a href={HOSPITAL.googleMapsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-full border border-gray-200 px-6 py-3 text-xs font-bold text-text-primary bg-white hover:bg-gray-50 transition-colors uppercase tracking-wider">
-                  <ExternalLink className="h-4 w-4" />
-                  Google Maps
-                </a>
-                <a href={`tel:${HOSPITAL.phone}`} className="flex items-center justify-center gap-2 rounded-full border border-gray-200 px-6 py-3 text-xs font-bold text-text-primary bg-white hover:bg-gray-50 transition-colors uppercase tracking-wider">
-                  <Phone className="h-4 w-4" />
-                  Call Clinic
-                </a>
-              </div>
+              {(hasMapLink(site) || telHref(site)) && (
+                <div className="mt-8 flex flex-wrap justify-center gap-3">
+                  {hasMapLink(site) && (
+                    <a href={mapsUrl(site)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-full border border-gray-200 px-6 py-3 text-xs font-bold text-text-primary bg-white hover:bg-gray-50 transition-colors uppercase tracking-wider">
+                      <ExternalLink className="h-4 w-4" aria-hidden />
+                      Google Maps
+                    </a>
+                  )}
+                  {telHref(site) && (
+                    <a href={telHref(site)!} className="flex items-center justify-center gap-2 rounded-full border border-gray-200 px-6 py-3 text-xs font-bold text-text-primary bg-white hover:bg-gray-50 transition-colors uppercase tracking-wider">
+                      <Phone className="h-4 w-4" aria-hidden />
+                      Call Clinic
+                    </a>
+                  )}
+                </div>
+              )}
 
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 {mode !== "reschedule" && (
@@ -588,6 +642,9 @@ export function BookingWizard({ initialToken, mode = "book", rescheduleToken }: 
               </div>
               {mode !== "reschedule" && <p className="mt-2 text-xs text-text-secondary">For another person, use their own name and mobile number.</p>}
 
+              {confirmationToken && !messaging && mode !== "reschedule" && (
+                <p className="mt-8 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900">Save the links below (bookmark this page): they are the only way to edit, cancel or reschedule your appointment online.</p>
+              )}
               {confirmationToken && (
                 <div className="mt-8 pt-6 border-t border-gray-100 flex flex-wrap justify-center gap-4 text-xs font-semibold">
                   <Link href={`/book/edit/${confirmationToken}`} className="text-teal-600 hover:underline">

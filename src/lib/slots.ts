@@ -1,23 +1,13 @@
-import { BOOKING_HOURS } from "./constants";
+/** How far ahead patients may book. */
+export const BOOKING_HOURS = {
+  maxDaysAhead: 30,
+} as const;
 
 // All dates are calendar dates in India held as UTC midnight, which is how
 // Postgres @db.Date round-trips them. Never use server-local startOfDay here:
 // on an IST machine it shifts stored dates back by one day.
 const DAY_MS = 86_400_000;
 const IST_OFFSET_MIN = 330;
-
-export function generateTimeSlotsForDay(): { startTime: string; endTime: string }[] {
-  return [
-    { startTime: "09:00", endTime: "10:00" },
-    { startTime: "10:00", endTime: "11:00" },
-    { startTime: "11:00", endTime: "12:00" },
-    { startTime: "17:00", endTime: "18:00" },
-    { startTime: "18:00", endTime: "19:00" },
-    { startTime: "19:00", endTime: "20:00" },
-    { startTime: "20:00", endTime: "21:00" },
-    { startTime: "21:00", endTime: "22:00" },
-  ];
-}
 
 /** Today's date in India, as UTC midnight. */
 export function todayIST(): Date {
@@ -63,7 +53,3 @@ export function isDateBookable(date: Date): boolean {
   );
 }
 
-/** Sunday is holiday - returns empty slots */
-export function getSlotsForDate(date: Date): { startTime: string; endTime: string }[] {
-  return date.getUTCDay() === 0 ? [] : generateTimeSlotsForDay();
-}

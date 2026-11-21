@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // generated or local-only folders
+    ".open-next/**",
+    ".local-data/**",
+    ".wrangler/**",
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 

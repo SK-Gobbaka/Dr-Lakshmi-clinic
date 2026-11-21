@@ -1,13 +1,14 @@
 import type { MetadataRoute } from "next";
+import { siteUrl } from "@/lib/site-url";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+export const dynamic = "force-dynamic"; // the address comes from the request when NEXT_PUBLIC_SITE_URL is not set
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const base = await siteUrl();
   const routes = ["", "/doctors", "/treatments", "/book", "/book/treatment", "/privacy", "/terms"];
 
   return routes.map((route) => ({
-    url: `${siteUrl}${route}`,
-    lastModified: new Date(),
+    url: `${base}${route}`,
     changeFrequency: route === "" ? "weekly" : "monthly",
     priority: route === "" ? 1 : route === "/book" ? 0.9 : 0.7,
   }));

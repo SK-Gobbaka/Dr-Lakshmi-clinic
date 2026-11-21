@@ -1,4 +1,4 @@
-import { PATIENT_JOURNEY } from "@/lib/constants";
+import { PATIENT_JOURNEY } from "@/lib/content-static";
 
 // Genuinely sequential content, so numbered steps are appropriate here.
 export function PatientJourney() {

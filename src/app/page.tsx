@@ -10,62 +10,46 @@ import { Gallery } from "@/components/home/Gallery";
 import { Testimonials } from "@/components/home/Testimonials";
 import { FAQSection } from "@/components/home/FAQSection";
 import { FinalCTA } from "@/components/home/FinalCTA";
-import { HOSPITAL } from "@/lib/constants";
-import { getSeniorDoctor } from "@/lib/local-store";
+import { getSeniorDoctor } from "@/lib/clinic";
+import { getPublicSite } from "@/lib/content";
+import { log } from "@/lib/logger";
+import { BRAND, fullAddress } from "@/lib/site-info";
+import { siteUrl } from "@/lib/site-url";
+import type { SiteSettings } from "@/lib/clinic/types";
 
-export const dynamic = "force-dynamic"; // doctors and treatments are edited in the admin portal
+export const dynamic = "force-dynamic"; // doctors, treatments and content are edited in the admin portal
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+/** Search-engine data built only from what the clinic has saved; empty details are left out, never guessed. */
+function structuredData(site: SiteSettings, url: string) {
+  const street = [site.addressLine1, site.addressLine2].filter(Boolean).join(", ");
+  return {
+    "@context": "https://schema.org",
+    "@type": "MedicalBusiness",
+    name: BRAND.name,
+    description: BRAND.shortDescription,
+    url,
+    ...(site.phone && { telephone: site.phone }),
+    ...(site.email && { email: site.email }),
+    ...(fullAddress(site) && {
+      address: { "@type": "PostalAddress", streetAddress: street, ...(site.pincode && { postalCode: site.pincode }), addressLocality: "Hyderabad", addressRegion: "Telangana", addressCountry: "IN" },
+    }),
+    ...(site.googleRating && site.googleReviewCount && { aggregateRating: { "@type": "AggregateRating", ratingValue: site.googleRating, reviewCount: site.googleReviewCount } }),
+    medicalSpecialty: ["Dermatology"],
+  };
+}
 
-const structuredData = {
-  "@context": "https://schema.org",
-  "@type": "MedicalBusiness",
-  name: HOSPITAL.name,
-  description: HOSPITAL.shortDescription,
-  url: siteUrl,
-  telephone: HOSPITAL.phone,
-  email: HOSPITAL.email,
-  address: {
-    "@type": "PostalAddress",
-    streetAddress: HOSPITAL.address.line1,
-    addressLocality: "Hyderabad",
-    addressRegion: "Telangana",
-    postalCode: "500032",
-    addressCountry: "IN",
-  },
-  openingHoursSpecification: [
-    {
-      "@type": "OpeningHoursSpecification",
-      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-      opens: "09:00",
-      closes: "12:00",
-    },
-    {
-      "@type": "OpeningHoursSpecification",
-      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-      opens: "17:00",
-      closes: "22:00",
-    },
-  ],
-  aggregateRating: {
-    "@type": "AggregateRating",
-    ratingValue: HOSPITAL.googleRating,
-    reviewCount: HOSPITAL.googleReviewCount,
-  },
-  medicalSpecialty: ["Dermatology", "Trichology"],
-  image: `${siteUrl}/og-image.jpg`,
-};
-
-export default function HomePage() {
-  const senior = getSeniorDoctor();
+export default async function HomePage() {
+  const [site, url] = await Promise.all([getPublicSite(), siteUrl()]);
+  // The senior consultant is optional content: if the database is unreachable the rest of the page still renders.
+  const senior = await getSeniorDoctor().catch((err) => {
+    log.error("home.senior_unavailable", err);
+    return null;
+  });
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
-      <HeroSection />
-      <TrustStats />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData(site, url)).replace(/</g, "\\u003c") }} />
+      <HeroSection site={site} />
+      <TrustStats site={site} />
       <AboutSection />
       {senior && <SeniorConsultant doctor={senior} />}
       <DoctorsPreview />
@@ -75,7 +59,7 @@ export default function HomePage() {
       <Gallery />
       <Testimonials />
       <FAQSection />
-      <FinalCTA />
+      <FinalCTA site={site} />
     </>
   );
 }

@@ -1,16 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BookingWizard } from "@/components/booking/BookingWizard";
+import { bookingContext } from "@/lib/booking-page";
+import { BRAND } from "@/lib/site-info";
 
 export const metadata: Metadata = {
   title: "Book a treatment",
-  description: "Book a hair or skin treatment at Dr. Lakshmi Skin & Hair Clinic. Pick a date and a time slot.",
+  description: `Book a hair or skin treatment at ${BRAND.name}. Pick a date and a time slot.`,
 };
 
 export const dynamic = "force-dynamic";
 
 /** Date, time slot, and four patient details (name, age, gender, phone). No treatment, type or doctor to choose. */
-export default function BookTreatmentPage() {
+export default async function BookTreatmentPage() {
+  const ctx = await bookingContext();
   return (
     <div className="bg-background min-h-screen">
       <header className="mx-auto max-w-xl px-4 pt-10 text-center">
@@ -23,7 +26,7 @@ export default function BookTreatmentPage() {
           .
         </p>
       </header>
-      <BookingWizard mode="treatment" />
+      <BookingWizard mode="treatment" {...ctx} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createByAdmin } from "@/actions/admin";
 import { requireAdmin } from "@/lib/admin-auth";
-import { getAppointment, listDoctors, listPatients, listSlots } from "@/lib/local-store";
+import { getAppointment, listDoctors, listPatients, listSlots } from "@/lib/clinic";
 import { addDaysUTC, formatDateForApi, parseApiDate, slotStartsAt, todayIST } from "@/lib/slots";
 import { Notice, PageTitle, btnPlain, btnPrimary, card, fmtDate, fmtTime, input, one, type SP } from "../../../ui";
 
@@ -14,30 +14,25 @@ export default async function NewAppointmentPage({ searchParams }: { searchParam
   const sp = await searchParams;
 
   // Rebook: ?from=APT-0001 copies that patient's details; otherwise use whatever the form sent back.
-  const from = getAppointment(one(sp.from));
+  const from = (await getAppointment(one(sp.from)));
   const v = (k: string, fallback = "") => one(sp[k]) || fallback;
   const d = {
     fullName: v("fullName", from?.fullName),
     phone: v("phone", from?.phone),
-    age: v("age", from ? String(from.age) : ""),
+    age: v("age", from?.age ? String(from.age) : ""),
     gender: v("gender", from?.gender ?? ""),
     email: v("email", from?.email ?? ""),
     patientType: v("patientType", from ? "FOLLOW_UP" : "NEW"),
-    doctorId: v("doctorId", from?.doctorId ?? ""),
+    doctorId: v("doctorId", from?.doctorId ?? (from?.doctorGroup === "OTHERS" ? "OTHERS" : "")),
   };
-  const doctors = listDoctors({ publishedOnly: true });
+  const doctors = (await listDoctors({ publishedOnly: true }));
 
-  const find = one(sp.find).trim().toLowerCase();
-  const findDigits = find.replace(/\D/g, "");
-  const matches = find
-    ? listPatients()
-        .filter((p) => p.name.toLowerCase().includes(find) || (findDigits.length >= 3 && p.phone.includes(findDigits)))
-        .slice(0, 8)
-    : [];
+  const find = one(sp.find).trim();
+  const matches = find ? (await listPatients({ q: find, pageSize: 8 })).rows : [];
 
   const today = formatDateForApi(todayIST());
   const date = v("date", today);
-  const slots = listSlots(date).filter((s) => slotStartsAt(parseApiDate(date), s.startTime).getTime() > nowMs());
+  const slots = (await listSlots(date)).filter((s) => slotStartsAt(parseApiDate(date), s.startTime).getTime() > nowMs());
 
   return (
     <>
@@ -111,6 +106,7 @@ export default async function NewAppointmentPage({ searchParams }: { searchParam
                   {x.name}
                 </option>
               ))}
+              <option value="OTHERS">Other Doctors</option>
             </select>
           </label>
           <label className="text-sm font-semibold">

@@ -1,174 +1,78 @@
-# 🏥 Lakshmi Hair & Skin Hospital - Codebase & Architecture Guide
+# Codebase guide
 
-Welcome to the comprehensive guide for the Lakshmi Hair & Skin Hospital web application. This document details the technology stack, project folder structure, database schema, core program flows, and instructions on how to extend and maintain the application.
+How the code is organised and how the main flows work. Setup, connections and deployment are in `README.md`.
 
----
+## Data layer (`src/lib/clinic/`)
 
-## 🛠️ Technology Stack & Architecture
+All clinic data is in PostgreSQL (Supabase in production). The schema is in `supabase/migrations/`; `scripts/migrate.mjs` applies it.
 
-This application is built using a modern **Server-First Web Architecture** utilizing:
-1. **Next.js (v16.2.9 App Router)**: Uses React 19 and Next.js App Router. Features are split between **React Server Components (RSC)** (for fast page loading and SEO) and **Client Components** (for interactive pages).
-2. **Server Actions (RPC-style API)**: Instead of creating traditional REST endpoints, client-side components call asynchronous server functions directly, keeping data queries secure on the server side.
-3. **Prisma ORM & PostgreSQL**: A robust relational database schema managed through Prisma, ensuring clean queries, structural transactions, and type-safety.
-4. **Tailwind CSS (v4)**: Modern, highly customizable styling engine used with CSS variables for color palettes and layouts.
-5. **Lucide React & Framer Motion**: Provides smooth micro-animations and clean vector icons.
-6. **Zod & React Hook Form**: Standardized form parsing and runtime data verification on both browser and server.
+| File | Role |
+|---|---|
+| `src/lib/db.ts` | The Postgres connection (`postgres` driver, Supabase transaction pooler). One pool on Node; one client per request on Cloudflare Workers. |
+| `clinic/unit.ts` | **Unit of work.** `tx(scope, rule)` runs one business change in one database transaction: lock the dates involved (advisory locks), load the configuration and only the appointments in scope, run the rule (plain TypeScript that edits the loaded objects), write back exactly what changed, commit. A rule that fails rolls everything back. `getData(scope)` is the read-only version. |
+| `clinic/rules.ts` | Pure rules: slots, capacity, blocked dates, `planBlock`. They take the loaded data as an argument, so a page reads once and calls them in a loop. |
+| `clinic/appointments.ts` | Create, change status, edit, reschedule, delete, block date, emergency close, reminders, searching and exports. |
+| `clinic/catalog.ts` | Appointment types, time slots, doctor capacity, doctors, treatments. |
+| `clinic/reports.ts` | Dashboard counts, patients, statistics, audit and message log queries. |
+| `clinic/messages.ts` | The texts sent to patients and staff, with the template variables for WhatsApp. |
+| `content.ts` | Website content edited in the admin: contact details, gallery, testimonials, FAQs. |
 
----
+Rules that matter, all inside `tx()` so they cannot be bypassed:
 
-## 📁 File-by-File Breakdown
+- **Capacity.** A booking needs room in its time slot *and* in its doctor group (Dr. Lakshmi or Other Doctors) for that day. Cancelled appointments release their place; completed and no-show visits keep it.
+- **No double booking.** Per-date advisory locks serialise bookings for the same day; capacity-wide changes take an exclusive lock. The tests run many bookings in parallel against one real database to prove no slot is oversold.
+- **Appointment numbers** (`APT-2026-001`) come from a counter row and are gap-free: a booking that is refused does not use a number.
+- **Token numbers.** One counter, bumped only when an appointment moves to Completed. A second completion is rejected, so a token is never issued twice.
+- **Time slots.** Each has its own capacity (default 25). Slots may not overlap, last at most 60 minutes, and cannot be deleted or shrunk below existing bookings.
+- **Blocked dates.** Booking is refused; "cancel all" cancels every pending or confirmed appointment on the date in one transaction and marks them Cancelled by Admin.
+- **Names are snapshots.** Appointments keep the type, doctor and treatment names, so renaming or deleting one never breaks old records.
 
-Below is the directory map of the codebase. Click on any file path to open it directly.
+## Accounts and sign-in (`src/lib/auth/`, `src/lib/admin-auth.ts`)
 
-### 1. Database Configuration (`/prisma`)
-* **[prisma/schema.prisma](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/prisma/schema.prisma)**
-  * **Role:** Database structure definition.
-  * **Contents:** Models for `TimeSlot` (calendar capacity blocks) and `Appointment` (patient booking details, status, and tokens).
-* **[prisma/seed.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/prisma/seed.ts)**
-  * **Role:** Database initialization script.
-  * **Contents:** Code to pre-generate open time slots for the next 30 days so patients have slots to select.
+Accounts live in `admin_users` (OWNER or STAFF, hashed password, `session_version`). The cookie holds the account id, the session version and an expiry, signed with `SESSION_SECRET`; every request looks the account up again, so disabling an account or changing its password signs it out at once. `requireAdminUser()` guards pages, `requireOwner()` guards owner-only pages and actions, `routeAuth()` guards route handlers (401/403). Failed sign-ins are counted per client address in `login_failures`.
 
-### 2. Server Actions (`/src/actions`)
-* **[src/actions/appointment.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/actions/appointment.ts)**
-  * **Role:** The application's backend controller logic.
-  * **Contents:**
-    * `getAvailableSlots(dateStr)`: Fetches booking slots for a selected date.
-    * `createAppointment(data)`: Books slot, saves client data, decrements slot capacity.
-    * `cancelAppointment({ token, reason })`: Cancels booking, frees slot capacity.
-    * `rescheduleAppointment({ token, newSlotId })`: Database transaction shifting booking to a new slot.
-    * `getAppointmentByToken(token)`: Fetches individual records (used by Cancel & Reschedule pages) with mock fallbacks if offline.
+## Connections (`src/lib/integrations/`, `src/lib/env.ts`)
 
-### 3. Page Routes (`/src/app`)
-Each folder name corresponds to a URL path on the website.
-* **[src/app/page.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/page.tsx)**: The main landing page (`/`).
-* **[src/app/book/page.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/book/page.tsx)**: The main appointment booking page (`/book`).
-* **[src/app/book/cancel/[token]/page.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/book/cancel/[token]/page.tsx)**: Cancellation page (`/book/cancel/<token>`).
-* **[src/app/book/reschedule/[token]/page.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/book/reschedule/[token]/page.tsx)**: Rescheduling page (`/book/reschedule/<token>`).
-* **[src/app/api/cron/reminders/route.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/api/cron/reminders/route.ts)**: Cron endpoint `/api/cron/reminders` called every 15 mins to send automated WhatsApp reminders.
-* **[src/app/globals.css](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/globals.css)**: Master style sheet housing custom CSS variables and Tailwind configuration directives.
-* **[src/app/layout.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/layout.tsx)**: Global HTML layout wrapping all pages (includes Header, Footer, Font configuration).
+Each external service has one small adapter that does nothing until its settings exist:
 
-### 4. Helper Libraries (`/src/lib`)
-* **[src/lib/prisma.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/prisma.ts)**: Prevents Prisma connection pool exhaustion by caching database clients during hot-reloads.
-* **[src/lib/slots.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/slots.ts)**: Hospital hours logic (e.g. 9:00 AM - 5:00 PM, 30-min intervals) and date parsing functions.
-* **[src/lib/validations.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/validations.ts)**: Zod schemas to validate form inputs.
-* **[src/lib/whatsapp.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/whatsapp.ts)**: Constructs WhatsApp notification text and sends API requests.
-* **[src/lib/data/](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/data)**: Static data arrays (FAQ entries, Doctor list, Testimonials) displayed on the frontend.
+| File | Service |
+|---|---|
+| `integrations/whatsapp.ts` | WhatsApp Business Cloud API (templates per event, plain-text fallback) |
+| `integrations/email.ts` | Resend |
+| `integrations/storage.ts` | Supabase Storage (disk in development) |
+| `integrations/turnstile.ts` | Cloudflare Turnstile |
+| `integrations/deliver.ts` | Sends the messages a booking change produced, records each attempt in `message_log`, never throws; uses `waitUntil` on Cloudflare |
 
-### 5. UI Components (`/src/components`)
-* **[src/components/layout/Header.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/layout/Header.tsx)** & **[Footer.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/layout/Footer.tsx)**: Header and footer elements.
-* **[src/components/booking/BookingWizard.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/booking/BookingWizard.tsx)**: The main multi-step wizard component that handles treatment choice, time selection, details, OTP, and success displays.
-* **[src/components/home/](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/home)**: Landing page component widgets (Hero, Stats, Reviews, etc.).
+`env.ts` reads every setting in one place and reports which connections are missing (Admin > Integrations).
 
----
+## Folders
 
-## 🗄️ Database Models Explained
-
-The PostgreSQL database maintains two interconnected models:
-
-### 1. `TimeSlot` (Stores dates & times)
-| Field | Type | Description |
-|---|---|---|
-| `id` | String | Unique identifier (CUID) |
-| `date` | DateTime | The day of the slots (Y-M-D) |
-| `startTime` | String | e.g., `"10:30 AM"` |
-| `endTime` | String | e.g., `"11:00 AM"` |
-| `capacity` | Int | Max bookings allowed in this slot (default: `2`) |
-| `bookedCount` | Int | Number of current bookings (default: `0`) |
-| `isActive` | Boolean | True if the clinic is open for booking in this slot |
-
-### 2. `Appointment` (Stores bookings)
-| Field | Type | Description |
-|---|---|---|
-| `id` | String | Unique identifier (CUID) |
-| `slotId` | String | Foreign key pointing to a `TimeSlot` record |
-| `fullName` | String | Patient's name |
-| `phone` | String | Patient's phone number |
-| `email` | String? | Optional email |
-| `age` | Int | Patient's age |
-| `gender` | Enum | `MALE` / `FEMALE` / `OTHER` |
-| `patientType` | Enum | `NEW` (first visit) / `FOLLOW_UP` |
-| `status` | Enum | `CONFIRMED` / `CANCELLED` / `COMPLETED` / `NO_SHOW` / `RESCHEDULED` |
-| `confirmationToken`| String | Unique string used in SMS/WhatsApp cancel/reschedule URLs |
-
----
-
-## 🔄 Core Application Flows
-
-### 1. Booking Flow
-```mermaid
-sequenceDiagram
-    participant Browser as BookingWizard Component
-    participant Server as Server Actions
-    participant Database as PostgreSQL DB
-
-    Browser->>Server: getAvailableSlots(date)
-    Server->>Database: Query active TimeSlots for date
-    Database-->>Server: Return slots (capacity vs bookedCount)
-    Server-->>Browser: Show available times
-    Browser->>Server: createAppointment(patientDetails)
-    Server->>Database: Transaction: Increment bookedCount & Insert Appointment
-    Database-->>Server: Created Appointment Record
-    Server-->>Browser: Return confirmationToken
+```
+src/app/                       public pages: /, /doctors, /treatments, /book, /book/treatment, private cancel/edit/reschedule links
+src/app/admin/(panel)/         admin pages (guarded by the layout and again by each page/action)
+src/app/admin/login            sign-in
+src/app/api/slots              public slot availability (rate-limited); src/app/admin/api/slots is the admin version
+src/app/api/cron/reminders     reminder sender (called by the scheduled trigger in worker.ts)
+src/actions/appointment.ts     public server actions: bot check, rate limits, then the booking
+src/actions/admin.ts           admin server actions; each one re-checks the account and role
+src/components/                booking, home sections, layout, admin shell and forms
+src/lib/validations.ts         input rules shared by forms and actions
+supabase/migrations/           the database schema and default rows
+scripts/                       local database, migration runner, browser-test database and server
+tests/                         Vitest (business rules, accounts, validation; real PostgreSQL), tests/e2e (Playwright browser tests), tests/smoke (checks a running site)
+worker.ts                      Cloudflare entry point: the site plus the reminder schedule
 ```
 
-### 2. Rescheduling Flow
-```mermaid
-sequenceDiagram
-    participant Browser as Reschedule Page [token]
-    participant Server as Server Actions
-    participant Database as PostgreSQL DB
+## Booking flow
 
-    Browser->>Server: getAppointmentByToken(token)
-    Server->>Database: Query Appointment & linked TimeSlot
-    Database-->>Server: Return details (e.g. Name, Current Time)
-    Server-->>Browser: Load BookingWizard with patient data
-    Browser->>Server: rescheduleAppointment(token, newSlotId)
-    Server->>Database: Transaction: Cancel old slot, book new slot, status="RESCHEDULED"
-    Database-->>Server: Success
-    Server-->>Browser: Return new token for Success display
-```
+1. `BookingWizard` loads dates, and for a chosen date the slots and doctor-group availability, from server actions (always fresh). Failed calls show a message with a retry instead of a dead screen.
+2. `createAppointment` (action) checks the bot token (when Turnstile is on) and the rate limits, validates the input, then `clinic.createAppointment` re-checks the date, blocked days, slot capacity and doctor-group capacity inside `tx()`.
+3. The saved appointment returns a private token used in the cancel, edit and reschedule links. The messages it produced are sent after the save; a messaging failure never undoes a booking.
 
----
+## Common changes
 
-## 🛠️ Developer Actions: "If I want to change..."
-
-### 1. If I want to change a database table or add fields
-* **What to edit:** [prisma/schema.prisma](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/prisma/schema.prisma).
-* **Command to run:**
-  ```bash
-  # Push schema structural changes to the database
-  npx prisma db push
-  
-  # Regenerate type configurations
-  npm run db:generate
-  ```
-* **Follow-up:** Update validation schemas in [src/lib/validations.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/validations.ts) and form structures in [src/components/booking/BookingWizard.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/booking/BookingWizard.tsx) to match the new database properties.
-
-### 2. If I want to modify clinic timings or slot capacity
-* **What to edit:** Adjust configuration variables in [src/lib/slots.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/lib/slots.ts).
-  * `START_HOUR` / `END_HOUR`: Adjust business hours.
-  * `SLOT_DURATION`: Time in minutes (default `30`).
-  * `capacity` in [prisma/seed.ts](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/prisma/seed.ts) (default slots limit).
-* **Command to run:**
-  ```bash
-  # Re-populate database with slots aligned with new settings
-  npm run db:seed
-  ```
-
-### 3. If I want to add new links, layout menus, or styles
-* **For styles:** Edit [src/app/globals.css](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/app/globals.css). CSS edits are compiled in real-time.
-* **For headers/footers:** Edit [src/components/layout/Header.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/layout/Header.tsx) or [Footer.tsx](file:///c:/Users/sasig/AndroidStudioProjects/Laskshmi_Clinic_Full/Lakshmi_Hair_User/src/components/layout/Footer.tsx).
-
----
-
-## 🧹 Troubleshooting & Caches
-If you rename folders, move files, or run into sudden local compilation glitches, run these cache cleanup commands in your PowerShell console to rebuild fresh:
-
-```powershell
-# Clear local Next.js cache and TypeScript incremental cache
-Remove-Item -Recurse -Force .next, tsconfig.tsbuildinfo -ErrorAction SilentlyContinue
-
-# Regenerate Prisma Client definitions
-npm run db:generate
-```
+- **Slot times or capacity:** Admin > Time slots & capacity. No code change.
+- **Clinic phone, address, hours, social links, figures:** Admin > Contact & site details.
+- **FAQs, gallery, testimonials:** Admin > FAQs / Gallery / Testimonials.
+- **A new admin page:** add it under `src/app/admin/(panel)/`, call `requireAdminUser()` or `requireOwner()` first, and add a link in `src/components/admin/AdminShell.tsx` (mark owner-only links `owner: true`).
+- **A new database change:** add a numbered file to `supabase/migrations/` (never edit one that has been applied) and run `npm run db:migrate`.

@@ -2,22 +2,23 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { changeStatus, deleteAppointmentAction, rescheduleByAdmin } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { appointmentLabel, doctorLabel, getAppointment, listAppointments, sessionNameFor } from "@/lib/local-store";
+import { requireAdminUser } from "@/lib/admin-auth";
+import { appointmentLabel, appointmentsForPhone, doctorLabel, getAppointment, sessionNameFor } from "@/lib/clinic";
 import { SlotPicker } from "@/components/shared/SlotPicker";
 import { Notice, PageTitle, StatusBadge, btnDanger, btnPlain, btnPrimary, card, fmtDate, fmtStamp, fmtTime, input, one, type SP } from "../../../ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppointmentDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
-  await requireAdmin();
+  const user = await requireAdminUser();
   const { id } = await params;
   const sp = await searchParams;
-  const a = getAppointment(id);
+  const a = await getAppointment(id);
   if (!a) notFound();
 
   const live = a.status === "PENDING" || a.status === "CONFIRMED";
-  const others = listAppointments().filter((x) => x.phone === a.phone && x.id !== a.id);
+  const [samePhone, session] = await Promise.all([appointmentsForPhone(a.phone), sessionNameFor(a.startTime)]);
+  const others = samePhone.filter((x) => x.id !== a.id);
   const dl = "grid grid-cols-[8.5rem_1fr] gap-y-2 text-sm";
   const hidden = (action: string) => (
     <>
@@ -38,7 +39,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
 
       {a.needsAttention && live && (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
           <div>
             <p className="font-semibold">Needs manual handling</p>
             <p>{a.attentionReason}. Use Reschedule below to move it to a date with room; the patient is notified automatically.</p>
@@ -65,7 +66,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
               {fmtTime(a.startTime)} to {fmtTime(a.endTime)}
             </dd>
             <dt className="text-text-secondary">Session</dt>
-            <dd>{sessionNameFor(a.startTime)}</dd>
+            <dd>{session}</dd>
             <dt className="text-text-secondary">Persons</dt>
             <dd>{a.persons}</dd>
             {a.tokenNumber && (
@@ -151,7 +152,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
               <button className={btnDanger}>Cancel appointment</button>
             </form>
           </div>
-          <p className="mt-2 text-xs text-text-secondary">Confirming notifies the patient and the admin. Completed and no-show can be set once the appointment time has started.</p>
+          <p className="mt-2 text-xs text-text-secondary">Confirming messages the patient (where WhatsApp is connected) and alerts the staff. Completed and no-show can be set once the appointment time has started.</p>
         </section>
       )}
 
@@ -169,7 +170,7 @@ export default async function AppointmentDetail({ params, searchParams }: { para
         </section>
       )}
 
-      {a.status === "CANCELLED" && (
+      {a.status === "CANCELLED" && user.role === "OWNER" && (
         <section className={`${card} mt-6 p-4`}>
           <h2 className="mb-2 font-heading text-lg font-semibold">Delete record</h2>
           <p className="mb-3 text-sm text-text-secondary">Only cancelled appointments can be deleted. This permanently removes the record and its notifications and cannot be undone.</p>

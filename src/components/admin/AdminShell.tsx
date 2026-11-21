@@ -3,40 +3,104 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { CalendarDays, ChartColumn, ClipboardList, Clock, History, LayoutDashboard, LogOut, Menu, Stethoscope, Syringe, Tags, Users, X } from "lucide-react";
+import {
+  CalendarDays,
+  ChartColumn,
+  CircleHelp,
+  ClipboardList,
+  Clock,
+  Globe,
+  History,
+  Images,
+  KeyRound,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MessageSquareQuote,
+  Plug,
+  Send,
+  Stethoscope,
+  Syringe,
+  Tags,
+  UserCog,
+  Users,
+  X,
+} from "lucide-react";
 
-const NAV = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/appointments", label: "Appointments", icon: ClipboardList },
-  { href: "/admin/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/admin/sessions", label: "Session & capacity", icon: Clock },
-  { href: "/admin/doctors", label: "Doctors", icon: Stethoscope },
-  { href: "/admin/treatments", label: "Treatments", icon: Syringe },
-  { href: "/admin/statistics", label: "Statistics", icon: ChartColumn },
-  { href: "/admin/types", label: "Appointment types", icon: Tags },
-  { href: "/admin/patients", label: "Patients", icon: Users },
-  { href: "/admin/audit", label: "Audit log", icon: History },
+type Role = "OWNER" | "STAFF";
+
+/** `owner: true` entries are hidden from staff accounts (the pages and actions also refuse them). */
+const SECTIONS: { title: string; items: { href: string; label: string; icon: typeof Users; owner?: boolean }[] }[] = [
+  {
+    title: "Daily work",
+    items: [
+      { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/admin/appointments", label: "Appointments", icon: ClipboardList },
+      { href: "/admin/calendar", label: "Calendar", icon: CalendarDays, owner: true },
+      { href: "/admin/patients", label: "Patients", icon: Users },
+    ],
+  },
+  {
+    title: "Clinic setup",
+    items: [
+      { href: "/admin/sessions", label: "Time slots & capacity", icon: Clock, owner: true },
+      { href: "/admin/types", label: "Appointment types", icon: Tags, owner: true },
+      { href: "/admin/doctors", label: "Doctors", icon: Stethoscope, owner: true },
+      { href: "/admin/treatments", label: "Treatments", icon: Syringe, owner: true },
+    ],
+  },
+  {
+    title: "Website",
+    items: [
+      { href: "/admin/site", label: "Contact & site details", icon: Globe, owner: true },
+      { href: "/admin/gallery", label: "Gallery", icon: Images, owner: true },
+      { href: "/admin/testimonials", label: "Testimonials", icon: MessageSquareQuote, owner: true },
+      { href: "/admin/faqs", label: "FAQs", icon: CircleHelp, owner: true },
+    ],
+  },
+  {
+    title: "Reports and system",
+    items: [
+      { href: "/admin/statistics", label: "Statistics", icon: ChartColumn, owner: true },
+      { href: "/admin/messages", label: "Message log", icon: Send, owner: true },
+      { href: "/admin/audit", label: "Audit log", icon: History, owner: true },
+      { href: "/admin/users", label: "Admin accounts", icon: UserCog, owner: true },
+      { href: "/admin/integrations", label: "Integrations", icon: Plug, owner: true },
+      { href: "/admin/account", label: "My account", icon: KeyRound },
+    ],
+  },
 ];
 
-export function AdminShell({ admin, logout, children }: { admin: string; logout: () => Promise<void>; children: React.ReactNode }) {
+export function AdminShell({ admin, role, logout, children }: { admin: string; role: Role; logout: () => Promise<void>; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const active = (href: string) => (href === "/admin" ? path === "/admin" : path.startsWith(href));
 
   const nav = (
-    <nav aria-label="Admin" className="flex flex-col gap-1.5 p-4">
-      {NAV.map(({ href, label, icon: Icon }) => (
-        <Link
-          key={href}
-          href={href}
-          onClick={() => setOpen(false)}
-          aria-current={active(href) ? "page" : undefined}
-          className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition-colors ${active(href) ? "bg-primary text-white shadow-sm" : "text-ink hover:bg-sand/70"}`}
-        >
-          <Icon className="h-4 w-4 shrink-0" />
-          {label}
-        </Link>
-      ))}
+    <nav aria-label="Admin" className="flex flex-col gap-4 p-4">
+      {SECTIONS.map((section) => {
+        const items = section.items.filter((i) => !i.owner || role === "OWNER");
+        if (items.length === 0) return null;
+        return (
+          <div key={section.title}>
+            <p className="mb-1.5 px-3.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">{section.title}</p>
+            <div className="flex flex-col gap-1">
+              {items.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setOpen(false)}
+                  aria-current={active(href) ? "page" : undefined}
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors ${active(href) ? "bg-primary text-white shadow-sm" : "text-ink hover:bg-sand/70"}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </nav>
   );
 
@@ -50,7 +114,7 @@ export function AdminShell({ admin, logout, children }: { admin: string; logout:
       </aside>
 
       {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Admin menu">
           <button type="button" aria-label="Close menu" className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
           <aside className="relative h-full w-72 max-w-[85vw] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -70,7 +134,9 @@ export function AdminShell({ admin, logout, children }: { admin: string; logout:
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex-1" />
-          <span className="hidden text-sm text-text-secondary sm:inline">Signed in as {admin}</span>
+          <span className="hidden text-sm text-text-secondary sm:inline">
+            Signed in as {admin} ({role === "OWNER" ? "owner" : "staff"})
+          </span>
           <form action={logout}>
             <button type="submit" className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-white px-3.5 text-sm font-semibold text-ink shadow-sm hover:border-primary/30 hover:bg-sand/50">
               <LogOut className="h-4 w-4" />
@@ -78,7 +144,12 @@ export function AdminShell({ admin, logout, children }: { admin: string; logout:
             </button>
           </form>
         </header>
-        <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-10"><div key={path} className="admin-page">{children}</div></main>
+        {/* the root layout already provides the page's <main> landmark */}
+        <div className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-10">
+          <div key={path} className="admin-page">
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,15 +1,14 @@
 import { deleteTypeAction, saveTypeAction, toggleTypeAction } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { listAppointments, listTypes } from "@/lib/local-store";
+import { requireOwner } from "@/lib/admin-auth";
+import { listTypes, typeUsage } from "@/lib/clinic";
 import { Notice, PageTitle, btnDanger, btnPlain, btnPrimary, card, input, one, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function TypesPage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  await requireOwner();
   const sp = await searchParams;
-  const types = listTypes();
-  const all = listAppointments();
+  const [types, usage] = await Promise.all([listTypes(), typeUsage()]);
 
   return (
     <>
@@ -21,7 +20,7 @@ export default async function TypesPage({ searchParams }: { searchParams: SP }) 
           <section key={t.id} className={`${card} p-4 ${t.active ? "" : "opacity-70"}`}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
               <span className="text-text-secondary">
-                {all.filter((a) => a.typeId === t.id).length} appointment(s) · {t.active ? "Active" : "Inactive"}
+                {usage[t.id] ?? 0} appointment(s) · {t.active ? "Active" : "Inactive"}
               </span>
               <div className="flex gap-2">
               <form action={toggleTypeAction}>

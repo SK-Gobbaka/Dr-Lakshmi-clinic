@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { emergencyCloseAction, executeBlockAction } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { appointmentLabel, blockedReason, planBlock } from "@/lib/local-store";
+import { requireOwner } from "@/lib/admin-auth";
+import { appointmentLabel, blockedReason, getData, planBlock } from "@/lib/clinic";
+import { formatDateForApi, getBookableDates } from "@/lib/slots";
 import { Notice, PageTitle, btnDanger, btnPlain, btnPrimary, card, fmtDate, fmtTime, input, one, type SP } from "../../../ui";
 
 export const dynamic = "force-dynamic";
@@ -12,15 +13,18 @@ export const dynamic = "force-dynamic";
  * proposes to move it. Nothing is changed until the admin approves the plan.
  */
 export default async function BlockDatePage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  await requireOwner();
   const sp = await searchParams;
   const date = one(sp.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return <Notice error="Choose a date from the calendar first." />;
-  const alreadyBlocked = blockedReason(date);
+  // The plan looks for room on every bookable day, so those days' appointments are read along with this date's.
+  const bookable = getBookableDates();
+  const data = await getData({ dates: [date], from: formatDateForApi(bookable[0]), to: formatDateForApi(bookable[bookable.length - 1]) });
+  const alreadyBlocked = blockedReason(date, data);
   const reason = one(sp.reason).trim() || alreadyBlocked || "";
 
   // A blocked date with active appointments left can still be cancelled in full; otherwise there is nothing to do here.
-  if (alreadyBlocked && planBlock(date).length === 0) {
+  if (alreadyBlocked && planBlock(date, {}, data).length === 0) {
     return (
       <>
         <PageTitle>Block date</PageTitle>
@@ -34,7 +38,7 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
 
   const overrides: Record<string, string> = {};
   for (const [k, v] of Object.entries(sp)) if (k.startsWith("ov_") && one(v)) overrides[k.slice(3)] = one(v);
-  const plan = planBlock(date, overrides);
+  const plan = planBlock(date, overrides, data);
   const flagged = plan.filter((p) => !p.target).length;
 
   return (
@@ -71,7 +75,7 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
                 <thead className="border-b border-border bg-sand/40">
                   <tr>
                     {["Appointment", "Current", "Proposed new slot", "Choose another date"].map((h) => (
-                      <th key={h} className="px-3 py-2 font-semibold">
+                      <th key={h} scope="col" className="px-3 py-2 font-semibold">
                         {h}
                       </th>
                     ))}
@@ -95,7 +99,7 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
                           </>
                         ) : (
                           <span className="flex items-start gap-1 font-semibold text-amber-800">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                             <span>
                               Manual handling
                               <span className="block text-xs font-normal">{p.reason}</span>
@@ -147,7 +151,7 @@ export default async function BlockDatePage({ searchParams }: { searchParams: SP
       <section className="mt-6 rounded-xl border-2 border-danger/40 bg-red-50/50 p-4">
         <h2 className="mb-2 font-heading text-lg font-semibold text-danger">Emergency closure: cancel all appointments</h2>
         <p className="mb-3 text-sm text-text-secondary">
-          Use this when the clinic has to close at short notice. It blocks {fmtDate(date)} (new bookings stop) and <strong>cancels all {plan.length} appointment(s)</strong> on that date instead of moving them. They are marked Cancelled by Admin and stay visible when you open this date again. Each patient gets a WhatsApp message saying the clinic is closed, with a link to book again.
+          Use this when the clinic has to close at short notice. It blocks {fmtDate(date)} (new bookings stop) and <strong>cancels all {plan.length} appointment(s)</strong> on that date instead of moving them. They are marked Cancelled by Admin and stay visible when you open this date again. Each patient is sent a WhatsApp message saying the clinic is closed, with a link to book again (once WhatsApp is connected under Integrations).
           This cannot be undone.
         </p>
         <form action={emergencyCloseAction}>

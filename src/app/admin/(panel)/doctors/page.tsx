@@ -1,7 +1,7 @@
-import Image from "next/image";
 import { deleteDoctorAction, saveDoctorAction } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { listDoctors, type Doctor } from "@/lib/local-store";
+import { requireOwner } from "@/lib/admin-auth";
+import { listDoctors, type Doctor } from "@/lib/clinic";
+import { Photo } from "@/components/shared/Photo";
 import { Empty, Notice, PageTitle, btnDanger, btnPrimary, card, input, label, one, textarea, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
@@ -66,9 +66,9 @@ function DoctorForm({ d }: { d?: Doctor }) {
 }
 
 export default async function DoctorsAdminPage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  await requireOwner();
   const sp = await searchParams;
-  const doctors = listDoctors();
+  const doctors = await listDoctors();
 
   return (
     <>
@@ -88,7 +88,7 @@ export default async function DoctorsAdminPage({ searchParams }: { searchParams:
           {doctors.map((d) => (
             <details key={d.id} className={`${card} p-4`}>
               <summary className="flex cursor-pointer flex-wrap items-center gap-3">
-                <Image src={d.image} alt="" width={48} height={48} className="h-12 w-12 rounded-full object-cover" />
+                <Photo src={d.image} alt="" fallbackName={d.name} width={48} height={48} className="h-12 w-12 rounded-full object-cover text-base" />
                 <span className="font-semibold">{d.name}</span>
                 <span className="text-sm text-text-secondary">{d.designation}</span>
                 {d.isSenior && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">Senior consultant</span>}

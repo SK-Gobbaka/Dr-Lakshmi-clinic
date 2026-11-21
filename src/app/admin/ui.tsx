@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Status } from "@/lib/local-store";
+import { STATUS_LABEL, statusText, type Status } from "@/lib/clinic/types";
 import { formatTime12Hour } from "@/lib/utils";
 
 export const fmtDate = (date: string) =>
@@ -16,13 +16,7 @@ export const fmtStamp = (iso: string) =>
 
 export const fmtTime = formatTime12Hour;
 
-export const STATUS_LABEL: Record<Status, string> = {
-  PENDING: "Pending",
-  CONFIRMED: "Confirmed",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-  NO_SHOW: "No-show",
-};
+export { STATUS_LABEL, statusText };
 
 const STATUS_STYLE: Record<Status, string> = {
   PENDING: "bg-amber-50 text-amber-800 border-amber-200",
@@ -30,14 +24,6 @@ const STATUS_STYLE: Record<Status, string> = {
   COMPLETED: "bg-green-50 text-green-800 border-green-200",
   CANCELLED: "bg-red-50 text-red-800 border-red-200",
   NO_SHOW: "bg-gray-100 text-gray-700 border-gray-200",
-};
-
-export const STATUS_ROW: Record<Status, string> = {
-  PENDING: "border-l-4 border-l-amber-500 bg-amber-50/40",
-  CONFIRMED: "border-l-4 border-l-blue-500 bg-blue-50/40",
-  COMPLETED: "border-l-4 border-l-green-500 bg-green-50/40",
-  CANCELLED: "border-l-4 border-l-red-500 bg-red-50/40",
-  NO_SHOW: "border-l-4 border-l-gray-400 bg-gray-50/40",
 };
 
 export function StatusLegend() {
@@ -50,10 +36,6 @@ export function StatusLegend() {
     </p>
   );
 }
-
-/** A cancelled appointment says who cancelled it: "Cancelled by Admin" or "Cancelled by Patient". */
-export const statusText = (status: Status, cancelledBy?: "ADMIN" | "PATIENT" | null) =>
-  status === "CANCELLED" && cancelledBy ? `Cancelled by ${cancelledBy === "ADMIN" ? "Admin" : "Patient"}` : STATUS_LABEL[status];
 
 export function StatusBadge({ status, cancelledBy }: { status: Status; cancelledBy?: "ADMIN" | "PATIENT" | null }) {
   return (
@@ -114,6 +96,34 @@ export function Empty({ children }: { children: React.ReactNode }) {
 }
 
 export const label = "block text-sm font-semibold text-ink";
+
+/** Previous / Next links for a long list. `href(n)` builds the address of page n. */
+export function Pager({ page, total, pageSize, href }: { page: number; total: number; pageSize: number; href: (n: number) => string }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (pages <= 1) return null;
+  return (
+    <nav aria-label="Pages" className="mt-4 flex items-center justify-between gap-3 text-sm">
+      <span className="text-text-secondary">
+        Page {page} of {pages} ({total} in all)
+      </span>
+      <span className="flex gap-2">
+        {page > 1 && (
+          <Link href={href(page - 1)} className={`${btnPlain} h-9`} rel="prev">
+            Previous
+          </Link>
+        )}
+        {page < pages && (
+          <Link href={href(page + 1)} className={`${btnPlain} h-9`} rel="next">
+            Next
+          </Link>
+        )}
+      </span>
+    </nav>
+  );
+}
+
+/** ?page= as a safe positive whole number. */
+export const pageOf = (v: string | string[] | undefined) => Math.max(1, Math.min(100000, Math.floor(Number(one(v))) || 1));
 
 export type SP = Promise<Record<string, string | string[] | undefined>>;
 export const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";

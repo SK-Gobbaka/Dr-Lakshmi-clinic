@@ -1,105 +1,42 @@
-"use client";
-
-import { useState, useTransition } from "react";
-import { useParams, useRouter } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckCircle, Loader2, XCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { cancelAppointment } from "@/actions/appointment";
+import { notFound } from "next/navigation";
+import { CancelForm } from "@/components/booking/CancelForm";
+import { appointmentLabel, getByToken } from "@/lib/clinic";
+import { formatLongDate, formatTime12Hour } from "@/lib/utils";
 
-export default function CancelAppointmentPage() {
-  const params = useParams();
-  const router = useRouter();
-  const token = params.token as string;
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState("");
-  const [cancelled, setCancelled] = useState(false);
-  const [isPending, startTransition] = useTransition();
+export const metadata: Metadata = { title: "Cancel Appointment", robots: { index: false, follow: false } };
+export const dynamic = "force-dynamic";
 
-  const handleCancel = () => {
-    startTransition(async () => {
-      setError("");
-      const result = await cancelAppointment({ token, reason });
-      if (result.success) {
-        setCancelled(true);
-      } else {
-        setError(result.error);
-      }
-    });
-  };
+const shell = "bg-background min-h-screen flex items-center justify-center px-4";
+const box = "max-w-md w-full rounded-2xl border border-border bg-white p-8 shadow-sm";
 
-  if (cancelled) {
+export default async function CancelAppointmentPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const a = await getByToken(token);
+  if (!a) notFound();
+
+  // Only a pending or confirmed appointment can be cancelled; say what happened to the others instead of showing a dead form.
+  if (a.status !== "PENDING" && a.status !== "CONFIRMED") {
     return (
-      <div className="bg-background min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-md w-full rounded-2xl border border-border bg-white p-8 text-center shadow-sm">
-          <CheckCircle className="mx-auto h-12 w-12 text-success mb-4" />
-          <h1 className="font-heading text-2xl font-bold text-text-primary">
-            Appointment Cancelled
-          </h1>
+      <div className={shell}>
+        <div className={`${box} text-center`}>
+          <h1 className="font-heading text-2xl font-bold text-text-primary">{a.status === "CANCELLED" ? "Already cancelled" : "Nothing to cancel"}</h1>
           <p className="mt-2 text-text-secondary">
-            Your appointment has been successfully cancelled.
+            Appointment {a.id} is {a.status.toLowerCase().replace("_", "-")}.
           </p>
-          <Button className="mt-6" asChild>
-            <Link href="/book">Book New Appointment</Link>
-          </Button>
+          <Link href="/book" className="mt-6 inline-block rounded-full bg-primary px-8 py-3 text-sm font-semibold text-white hover:bg-[#17604E]">
+            Book a new appointment
+          </Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-background min-h-screen flex items-center justify-center px-4">
-      <div className="max-w-md w-full rounded-2xl border border-border bg-white p-8 shadow-sm">
-        <XCircle className="h-10 w-10 text-danger mb-4" />
-        <h1 className="font-heading text-2xl font-bold text-text-primary">
-          Cancel Appointment
-        </h1>
-        <p className="mt-2 text-text-secondary">
-          Are you sure you want to cancel your appointment? This action cannot be undone.
-        </p>
-
-        {error && (
-          <p className="mt-4 text-sm text-danger" role="alert">
-            {error}
-          </p>
-        )}
-
-        <div className="mt-6">
-          <Label htmlFor="reason">Reason for cancelling (required)</Label>
-          <Input
-            id="reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Tell us why you're cancelling"
-            required
-            aria-required="true"
-            maxLength={200}
-            className="mt-1.5"
-          />
-        </div>
-
-        <div className="mt-6 flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={() => router.back()}>
-            Go Back
-          </Button>
-          <Button
-            variant="destructive"
-            className="flex-1"
-            onClick={handleCancel}
-            disabled={isPending || reason.trim().length < 3}
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Cancelling...
-              </>
-            ) : (
-              "Confirm Cancel"
-            )}
-          </Button>
-        </div>
+    <div className={shell}>
+      <div className={box}>
+        <CancelForm token={token} summary={{ id: a.id, name: a.fullName, what: appointmentLabel(a), when: `${formatLongDate(a.date)}, ${formatTime12Hour(a.startTime)}` }} />
       </div>
     </div>
   );

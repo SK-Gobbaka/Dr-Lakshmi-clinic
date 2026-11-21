@@ -1,24 +1,23 @@
-import { currentAdmin } from "@/lib/admin-auth";
-import { analysis, doctorLabel, appointmentLabel } from "@/lib/local-store";
+import { routeAuth } from "@/lib/admin-auth";
+import { analysis, doctorLabel, appointmentLabel } from "@/lib/clinic";
 import { barChart, lineChart, pieChart } from "@/lib/charts";
+import { cell } from "@/lib/csv";
+import { logAudit } from "@/lib/log-audit";
 
-// Spreadsheet cell: stop formula injection from patient-typed names.
-const cell = (v: unknown) => {
-  let s = String(v ?? "");
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
-  return `"${s.replace(/"/g, '""')}"`;
-};
+export const dynamic = "force-dynamic";
 
 const svg = (body: string, name: string) =>
-  new Response(body, { headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.svg"` } });
+  new Response(body, { headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.svg"`, "Cache-Control": "no-store" } });
 
+/** Statistics charts (SVG) and the full CSV. Owners only: the CSV contains patient names and phone numbers. */
 export async function GET(req: Request) {
-  if (!(await currentAdmin())) return new Response("Unauthorized", { status: 401 });
+  const { user, denied } = await routeAuth("OWNER");
+  if (denied) return denied;
   const url = new URL(req.url);
   const rangeParam = url.searchParams.get("range") ?? "30";
   const days = ["0", "7", "30", "90"].includes(rangeParam) ? Number(rangeParam) : 30;
   const format = url.searchParams.get("format") ?? "csv";
-  const a = analysis(days);
+  const a = await analysis(days);
   const period = days ? `Last ${days} days` : "All time";
   const tag = `${days || "all"}`;
 
@@ -84,7 +83,8 @@ export async function GET(req: Request) {
     ["ID", "Patient", "Phone", "For", "Doctor", "Date", "Time", "Status", "Booked by", "Cancel reason", "Booked on"],
     ...a.list.map((x) => [x.id, x.fullName, x.phone, appointmentLabel(x), doctorLabel(x), x.date, x.startTime, x.status, x.source, x.cancelReason, x.createdAt]),
   ];
+  await logAudit(user.username, "export.statistics", `Downloaded the statistics CSV (${period}, ${a.list.length} appointment rows)`);
   return new Response("﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n"), {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="insights-${tag}.csv"` },
+    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="insights-${tag}.csv"`, "Cache-Control": "no-store" },
   });
 }

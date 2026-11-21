@@ -1,10 +1,15 @@
-import Image from "next/image";
 import Link from "next/link";
-import { listDoctors } from "@/lib/local-store";
+import { Photo } from "@/components/shared/Photo";
+import { listDoctors } from "@/lib/clinic";
+import { log } from "@/lib/logger";
 
-export function DoctorsPreview() {
+export async function DoctorsPreview() {
   // A few team members besides the featured senior consultant; managed in the admin portal
-  const previewList = listDoctors({ publishedOnly: true }).filter((d) => !d.isSenior).slice(0, 3);
+  const doctors = await listDoctors({ publishedOnly: true }).catch((err) => {
+    log.error("home.doctors_unavailable", err);
+    return [];
+  });
+  const previewList = doctors.filter((d) => !d.isSenior).slice(0, 3);
   if (previewList.length === 0) return null;
 
   return (
@@ -24,7 +29,7 @@ export function DoctorsPreview() {
           {previewList.map((doctor) => (
             <article key={doctor.id} className="flex gap-4">
               <div className="relative h-32 w-28 shrink-0 overflow-hidden rounded-xl bg-background">
-                <Image src={doctor.image} alt={doctor.name} fill className="object-cover" sizes="112px" />
+                <Photo src={doctor.image} alt={doctor.name} fallbackName={doctor.name} fill className="object-cover" sizes="112px" />
               </div>
               <div className="self-center">
                 <h3 className="font-heading text-xl font-semibold text-ink">{doctor.name}</h3>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fmt12 } from "./time";
+import { formatTime12Hour } from "@/lib/utils";
 
 interface Slot {
   id: string;
@@ -78,7 +78,7 @@ export function SlotPicker({ endpoint, excludeId, defaultSlotId, name = "slotId"
                     aria-pressed={chosen === s.id}
                     className={`rounded-lg border px-3 py-1.5 text-sm ${chosen === s.id ? "border-primary bg-primary text-white" : "border-border bg-white text-ink hover:border-primary"}`}
                   >
-                    {fmt12(s.startTime)}
+                    {formatTime12Hour(s.startTime)}
                     {showRemaining && <span className={`ml-1.5 text-xs ${chosen === s.id ? "text-white/80" : "text-text-secondary"}`}>{s.remaining} left</span>}
                   </button>
                 ))}

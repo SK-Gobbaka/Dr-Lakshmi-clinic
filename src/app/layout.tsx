@@ -4,7 +4,8 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { MobileActionBar } from "@/components/layout/MobileActionBar";
 import { SiteChrome } from "@/components/layout/SiteChrome";
-import { HOSPITAL } from "@/lib/constants";
+import { getPublicSite } from "@/lib/content";
+import { BRAND } from "@/lib/site-info";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -19,47 +20,29 @@ const source = Source_Sans_3({
   display: "swap",
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+export const dynamic = "force-dynamic"; // the header and footer show contact details saved in the admin portal
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
   title: {
-    default: `${HOSPITAL.name} | Premium Hair & Skin Care`,
-    template: `%s | ${HOSPITAL.name}`,
+    default: `${BRAND.name} | Hair & Skin Clinic`,
+    template: `%s | ${BRAND.name}`,
   },
-  description: HOSPITAL.shortDescription,
-  keywords: [
-    "hair transplant",
-    "skin treatment",
-    "dermatology",
-    "hair loss",
-    "acne treatment",
-    "Hyderabad",
-    "PRP therapy",
-    "laser treatment",
-  ],
-  authors: [{ name: HOSPITAL.name }],
+  description: BRAND.shortDescription,
+  authors: [{ name: BRAND.name }],
   openGraph: {
     type: "website",
     locale: "en_IN",
-    url: siteUrl,
-    siteName: HOSPITAL.name,
-    title: `${HOSPITAL.name} | Premium Hair & Skin Care`,
-    description: HOSPITAL.shortDescription,
-    images: [
-      {
-        url: "/og-image.jpg",
-        width: 1200,
-        height: 630,
-        alt: HOSPITAL.name,
-      },
-    ],
+    siteName: BRAND.name,
+    title: `${BRAND.name} | Hair & Skin Clinic`,
+    description: BRAND.shortDescription,
   },
   twitter: {
-    card: "summary_large_image",
-    title: HOSPITAL.name,
-    description: HOSPITAL.shortDescription,
-    images: ["/og-image.jpg"],
+    card: "summary",
+    title: BRAND.name,
+    description: BRAND.shortDescription,
   },
   robots: {
     index: true,
@@ -67,11 +50,13 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Contact details come from Admin > Contact & site details. If the database is down the pages still render.
+  const site = await getPublicSite();
   return (
     <html lang="en" className={`${fraunces.variable} ${source.variable} h-full`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col antialiased">
@@ -79,14 +64,14 @@ export default function RootLayout({
           Skip to main content
         </a>
         <SiteChrome>
-          <Header />
+          <Header site={site} />
         </SiteChrome>
         <main id="main-content" className="flex-1">
           {children}
         </main>
         <SiteChrome>
-          <Footer />
-          <MobileActionBar />
+          <Footer site={site} />
+          <MobileActionBar site={site} />
           <div className="h-[4.5rem] lg:hidden" aria-hidden />
         </SiteChrome>
       </body>

@@ -1,21 +1,19 @@
 import { deleteSessionAction, saveDoctorCapacityAction, saveSessionAction, setAutoConfirmAction, toggleSessionAction, unblockDateAction, updateSlotAction } from "@/actions/admin";
-import { requireAdmin } from "@/lib/admin-auth";
-import { DEFAULT_SLOT_CAPACITY, blockedReason, doctorCapacity, getSettings, listBlocked, listSessions, listSlots } from "@/lib/local-store";
+import { requireOwner } from "@/lib/admin-auth";
+import { DEFAULT_SLOT_CAPACITY, blockedReason, doctorCapacity, getData, getSettings, listBlocked, listSessions, listSlots } from "@/lib/clinic";
 import { formatDateForApi, todayIST } from "@/lib/slots";
 import { Empty, Notice, PageTitle, btnDanger, btnPlain, btnPrimary, card, fmtDate, fmtTime, input, one, type SP } from "../../ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function SessionsPage({ searchParams }: { searchParams: SP }) {
-  await requireAdmin();
+  await requireOwner();
   const sp = await searchParams;
-  const settings = getSettings();
   // Today's capacity is shown first; pick another date to see that day's bookings.
   const date = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.date)) ? one(sp.date) : formatDateForApi(todayIST());
-  const timeSlots = listSessions();
-  const slots = listSlots(date);
-  const doctors = doctorCapacity(date);
-  const closed = blockedReason(date);
+  const [settings, timeSlots, slots, data, blocked] = await Promise.all([getSettings(), listSessions(), listSlots(date), getData({ dates: [date] }), listBlocked()]);
+  const doctors = doctorCapacity(date, data);
+  const closed = blockedReason(date, data);
 
   return (
     <>
@@ -33,7 +31,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
             <thead className="border-b border-border bg-slate-50">
               <tr>
                 {["Time slot", "Capacity", "Status", ""].map((h) => (
-                  <th key={h} className="px-4 py-3 font-semibold">
+                  <th key={h} scope="col" className="px-4 py-3 font-semibold">
                     {h}
                   </th>
                 ))}
@@ -148,7 +146,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
                 <thead className="border-b border-border bg-slate-50">
                   <tr>
                     {["Time", "Capacity", "Booked", "Date limit", "This date"].map((h) => (
-                      <th key={h} className="px-4 py-3 font-semibold">
+                      <th key={h} scope="col" className="px-4 py-3 font-semibold">
                         {h}
                       </th>
                     ))}
@@ -191,11 +189,11 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
               Block {date}
             </a>
           </div>
-          {listBlocked().length === 0 ? (
+          {blocked.length === 0 ? (
             <Empty>No blocked dates.</Empty>
           ) : (
             <ul className="divide-y divide-border">
-              {listBlocked().map((b) => (
+              {blocked.map((b) => (
                 <li key={b.date} className="flex items-center justify-between gap-2 py-2 text-sm">
                   <span>
                     {fmtDate(b.date)} · {b.reason}
@@ -221,7 +219,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: SP 
           <button className={btnPlain}>Save policy</button>
         </form>
         <p className="mt-2 text-xs text-text-secondary">
-          Off (default): online bookings wait as Pending until you confirm them, which sends the patient and admin confirmation notifications. Pending bookings still hold a place in the slot.
+          Off (default): online bookings wait as Pending until you confirm them; confirming sends the patient their confirmation message (once WhatsApp is connected). Pending bookings still hold a place in the slot.
         </p>
       </section>
     </>

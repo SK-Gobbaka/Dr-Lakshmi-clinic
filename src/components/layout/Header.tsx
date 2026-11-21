@@ -4,7 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { Menu, X, Phone } from "lucide-react";
-import { HOSPITAL } from "@/lib/constants";
+import type { SiteSettings } from "@/lib/clinic/types";
+import { telHref } from "@/lib/site-info";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
@@ -20,9 +21,10 @@ const treatBtn =
 const callBtn =
   "flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-2.5 text-sm font-semibold text-ink hover:bg-sand/60 transition-colors";
 
-export function Header() {
+export function Header({ site }: { site: SiteSettings }) {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const tel = telHref(site); // null until the clinic has entered a phone number, so there is no dead Call button
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -32,7 +34,16 @@ export function Header() {
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setIsOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
 
   return (
@@ -43,44 +54,26 @@ export function Header() {
       )}
     >
       <div className="mx-auto flex h-24 max-w-[1200px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-2" aria-label="Home">
-          <Image
-            src="/logo-graphic.png"
-            alt="Dr. Lakshmi Logo"
-            width={256}
-            height={256}
-            quality={100}
-            className="h-[4.5rem] w-[4.5rem] object-contain shrink-0"
-            priority
-          />
-          <Image
-            src="/logo-text.png"
-            alt="Dr. Lakshmi Skin & Hair Clinic"
-            width={180}
-            height={56}
-            quality={100}
-            className="h-14 w-auto object-contain select-none"
-            priority
-          />
+        <Link href="/" className="flex items-center gap-2" aria-label="Dr. Lakshmi Skin & Hair Clinic, home">
+          <Image src="/logo-graphic.png" alt="" width={256} height={256} quality={100} className="h-[4.5rem] w-[4.5rem] object-contain shrink-0" priority />
+          <Image src="/logo-text.png" alt="Dr. Lakshmi Skin & Hair Clinic" width={180} height={56} quality={100} className="h-14 w-auto object-contain select-none" priority />
         </Link>
 
         <nav className="hidden lg:flex items-center gap-5 xl:gap-8" aria-label="Main navigation">
           {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="whitespace-nowrap text-[15px] font-semibold text-ink hover:text-primary transition-colors"
-            >
+            <Link key={link.href} href={link.href} className="whitespace-nowrap text-[15px] font-semibold text-ink hover:text-primary transition-colors">
               {link.label}
             </Link>
           ))}
         </nav>
 
         <div className="hidden lg:flex items-center gap-2">
-          <a href={`tel:${HOSPITAL.phone}`} className={callBtn} aria-label="Call hospital">
-            <Phone className="h-4 w-4" />
-            <span className="hidden xl:inline">Call now</span>
-          </a>
+          {tel && (
+            <a href={tel} className={callBtn} aria-label="Call the clinic">
+              <Phone className="h-4 w-4" aria-hidden />
+              <span className="hidden xl:inline">Call now</span>
+            </a>
+          )}
           <Link href="/book/treatment" className={treatBtn}>
             Book treatment
           </Link>
@@ -90,28 +83,24 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-1 lg:hidden">
-        <button
-          type="button"
-          className="lg:hidden flex h-11 w-11 items-center justify-center rounded-full text-ink hover:bg-sand/60"
-          onClick={() => setIsOpen(!isOpen)}
-          aria-label={isOpen ? "Close menu" : "Open menu"}
-          aria-expanded={isOpen}
-        >
-          {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+          <button
+            type="button"
+            className="lg:hidden flex h-11 w-11 items-center justify-center rounded-full text-ink hover:bg-sand/60"
+            onClick={() => setIsOpen(!isOpen)}
+            aria-label={isOpen ? "Close menu" : "Open menu"}
+            aria-expanded={isOpen}
+            aria-controls="mobile-menu"
+          >
+            {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
       </div>
 
       {isOpen && (
-        <div className="lg:hidden fixed inset-0 top-24 z-40 bg-background border-t border-border">
+        <div id="mobile-menu" className="lg:hidden fixed inset-0 top-24 z-40 bg-background border-t border-border">
           <nav className="flex flex-col gap-1 p-6" aria-label="Mobile navigation">
             {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded-xl px-4 py-3 text-lg font-semibold text-ink hover:bg-sand/60"
-                onClick={() => setIsOpen(false)}
-              >
+              <Link key={link.href} href={link.href} className="rounded-xl px-4 py-3 text-lg font-semibold text-ink hover:bg-sand/60" onClick={() => setIsOpen(false)}>
                 {link.label}
               </Link>
             ))}
@@ -122,14 +111,12 @@ export function Header() {
               <Link href="/book/treatment" className={cn(treatBtn, "justify-center py-3 text-center")} onClick={() => setIsOpen(false)}>
                 Book treatment
               </Link>
-              <a
-                href={`tel:${HOSPITAL.phone}`}
-                className={cn(callBtn, "justify-center border border-border py-3")}
-                onClick={() => setIsOpen(false)}
-              >
-                <Phone className="h-4 w-4" />
-                Call now
-              </a>
+              {tel && (
+                <a href={tel} className={cn(callBtn, "justify-center border border-border py-3")} onClick={() => setIsOpen(false)}>
+                  <Phone className="h-4 w-4" aria-hidden />
+                  Call now
+                </a>
+              )}
             </div>
           </nav>
         </div>

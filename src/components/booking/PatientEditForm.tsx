@@ -37,21 +37,25 @@ export function PatientEditForm({ token, types, values }: Props) {
     setError("");
     setSaved(false);
     start(async () => {
-      const r = await updateMyAppointment({
-        token,
-        fullName: get("fullName"),
-        phone: get("phone"),
-        email: get("email"),
-        age: get("age"),
-        gender: get("gender"),
-        patientType: get("patientType"),
-        typeId: get("typeId"),
-        persons: values.persons,
-        notes: get("notes"),
-        slotId: get("slotId"),
-      });
-      if (r.success) setSaved(true);
-      else setError(r.error);
+      try {
+        const r = await updateMyAppointment({
+          token,
+          fullName: get("fullName"),
+          phone: get("phone"),
+          email: get("email"),
+          age: get("age"),
+          gender: get("gender"),
+          patientType: get("patientType"),
+          typeId: get("typeId"),
+          persons: values.persons,
+          notes: get("notes"),
+          slotId: get("slotId"),
+        });
+        if (r.success) setSaved(true);
+        else setError(r.error);
+      } catch {
+        setError("We could not reach the server. Please check your connection and try again.");
+      }
     });
   };
 

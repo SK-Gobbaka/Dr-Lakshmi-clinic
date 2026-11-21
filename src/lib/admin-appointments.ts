@@ -1,5 +1,7 @@
 import { addDaysUTC, formatDateForApi, todayIST } from "./slots";
-import { appointmentLabel, doctorLabel, listAppointments, wasRescheduled, type Appointment } from "./local-store";
+import { appointmentLabel, doctorLabel, STATUS_LABEL, statusText, wasRescheduled, type Appointment, type Status } from "./clinic/types";
+import type { AppointmentQuery } from "./clinic/appointments";
+import { csv } from "./csv";
 import { formatTime12Hour } from "./utils";
 
 export const QUICK_VIEWS = [
@@ -14,15 +16,17 @@ export interface AppointmentFilter {
   view: QuickView;
   date: string; // yyyy-MM-dd from the calendar picker; wins over the quick filter
   phone: string; // digits only
+  status: Status | ""; // only this status (the dashboard tiles link here)
 }
 
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-/** Reads ?view=, ?date= and ?q= the same way for the page and for the download, so both always match. */
-export function parseFilter(sp: { view?: string; date?: string; q?: string }): AppointmentFilter {
+/** Reads ?view=, ?date=, ?q= and ?status= the same way for the page and for the download, so both always match. */
+export function parseFilter(sp: { view?: string; date?: string; q?: string; status?: string }): AppointmentFilter {
   const view = (QUICK_VIEWS.map((v) => v[0]) as string[]).includes(sp.view ?? "") ? (sp.view as QuickView) : "today";
   const phone = (sp.q ?? "").replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
-  return { view, date: isDate(sp.date ?? "") ? (sp.date as string) : "", phone };
+  const status = Object.keys(STATUS_LABEL).includes(sp.status ?? "") ? (sp.status as Status) : "";
+  return { view, date: isDate(sp.date ?? "") ? (sp.date as string) : "", phone, status };
 }
 
 /** The day a filter points at, or null for "All". */
@@ -35,27 +39,15 @@ export function filterDate(f: AppointmentFilter): string | null {
   return null;
 }
 
-/** Every appointment of the chosen day whatever its status: completed, cancelled, rescheduled or closed by the admin. */
-export function filterAppointments(f: AppointmentFilter): Appointment[] {
-  const day = filterDate(f);
-  return listAppointments()
-    .filter((a) => (!day || a.date === day) && (!f.phone || a.phone.includes(f.phone)))
-    .sort((a, b) => (day ? a.startTime.localeCompare(b.startTime) || a.createdAt.localeCompare(b.createdAt) : b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime)));
+/** The database query for a filter: every appointment of the chosen day whatever its status, unless a status is chosen. */
+export function queryOf(f: AppointmentFilter, attention = false): AppointmentQuery {
+  return { date: filterDate(f) ?? undefined, phone: f.phone || undefined, status: f.status || undefined, attention: attention || undefined };
 }
 
-const cell = (v: unknown) => {
-  const s = v === null || v === undefined ? "" : String(v);
-  // quote everything that could break a CSV row, and defuse spreadsheet formulas
-  const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-};
-
-const STATUS = { PENDING: "Pending", CONFIRMED: "Confirmed", COMPLETED: "Completed", CANCELLED: "Cancelled", NO_SHOW: "No-show" } as const;
-
 export function appointmentsCsv(rows: Appointment[]): string {
-  const head = ["Appointment ID", "Date", "Time", "Name", "Age", "Gender", "Phone", "Type", "Doctor", "Status", "Rescheduled", "Token", "Cancel reason", "Booked on"];
-  const lines = rows.map((a) =>
-    [
+  return csv(
+    ["Appointment ID", "Date", "Time", "Name", "Age", "Gender", "Phone", "Type", "Doctor", "Status", "Rescheduled", "Token", "Cancel reason", "Booked on"],
+    rows.map((a) => [
       a.id,
       a.date,
       formatTime12Hour(a.startTime),
@@ -65,20 +57,11 @@ export function appointmentsCsv(rows: Appointment[]): string {
       a.phone,
       appointmentLabel(a),
       doctorLabel(a),
-      a.status === "CANCELLED" && a.cancelledBy ? `Cancelled by ${a.cancelledBy === "ADMIN" ? "Admin" : "Patient"}` : STATUS[a.status],
+      statusText(a.status, a.cancelledBy),
       wasRescheduled(a) ? "Yes" : "No",
       a.tokenNumber,
       a.cancelReason,
       a.createdAt,
-    ]
-      .map(cell)
-      .join(",")
+    ])
   );
-  return "﻿" + [head.join(","), ...lines].join("\r\n") + "\r\n"; // BOM so Excel reads UTF-8 names
-}
-
-export function csvResponse(body: string, filename: string) {
-  return new Response(body, {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${filename}"`, "Cache-Control": "no-store" },
-  });
 }

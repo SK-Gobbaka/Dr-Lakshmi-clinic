@@ -27,8 +27,8 @@ export function TreatmentForm({ t, onCancel }: { t?: TreatmentFormValues; onCanc
         <input name="name" required maxLength={80} defaultValue={t?.name} className={inp} />
       </label>
       <label className={lbl}>
-        Treatment image (JPG, PNG or WebP, up to 2 MB){t ? ". Leave empty to keep the current image." : " *"}
-        <input name="photo" type="file" required={!t} accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-sm" />
+        Treatment image (optional; JPG, PNG or WebP, up to 2 MB){t ? ". Leave empty to keep the current image." : ""}
+        <input name="photo" type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-sm" />
       </label>
 
       <fieldset>

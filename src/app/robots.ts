@@ -1,14 +1,16 @@
 import type { MetadataRoute } from "next";
+import { siteUrl } from "@/lib/site-url";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+export const dynamic = "force-dynamic"; // the address comes from the request when NEXT_PUBLIC_SITE_URL is not set
 
-export default function robots(): MetadataRoute.Robots {
+export default async function robots(): Promise<MetadataRoute.Robots> {
   return {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/admin"],
+      // private booking links and the admin portal stay out of search results
+      disallow: ["/api/", "/admin", "/book/edit/", "/book/cancel/", "/book/reschedule/"],
     },
-    sitemap: `${siteUrl}/sitemap.xml`,
+    sitemap: `${await siteUrl()}/sitemap.xml`,
   };
 }

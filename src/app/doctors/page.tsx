@@ -1,21 +1,22 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getSeniorDoctor, listDoctors } from "@/lib/local-store";
-import { HOSPITAL } from "@/lib/constants";
+import { getSeniorDoctor, listDoctors } from "@/lib/clinic";
+import { getPublicSite } from "@/lib/content";
+import { BRAND, telHref } from "@/lib/site-info";
+import { Photo } from "@/components/shared/Photo";
 import { SeniorConsultant } from "@/components/home/SeniorConsultant";
 
 export const metadata: Metadata = {
   title: "Our Doctors",
-  description:
-    "Meet our team of experienced dermatologists and hair specialists at Lakshmi Hair & Skin Hospital.",
+  description: `Meet the doctors at ${BRAND.name}.`,
 };
 
 export const dynamic = "force-dynamic"; // doctors are edited in the admin portal
 
-export default function DoctorsPage() {
-  const senior = getSeniorDoctor();
-  const doctors = listDoctors({ publishedOnly: true }).filter((d) => d.id !== senior?.id);
+export default async function DoctorsPage() {
+  const [senior, all, site] = await Promise.all([getSeniorDoctor(), listDoctors({ publishedOnly: true }), getPublicSite()]);
+  const doctors = all.filter((d) => d.id !== senior?.id);
+  const tel = telHref(site);
   const teamCartoonSvg = (
     <svg className="h-10 w-20 text-[#1F7A63] inline-block align-middle mb-2 ml-1" viewBox="0 0 120 60" fill="none" stroke="currentColor" strokeWidth="1.8">
       {/* Left person */}
@@ -59,13 +60,7 @@ export default function DoctorsPage() {
                 >
                   {/* Doctor picture left */}
                   <div className="relative w-24 h-28 rounded-2xl overflow-hidden shrink-0 border border-gray-100 shadow-sm">
-                    <Image
-                      src={doctor.image}
-                      alt={doctor.name}
-                      fill
-                      className="object-cover"
-                      sizes="96px"
-                    />
+                    <Photo src={doctor.image} alt={doctor.name} fallbackName={doctor.name} fill className="object-cover" sizes="96px" />
                   </div>
 
                   {/* Peach text tag right */}
@@ -105,12 +100,11 @@ export default function DoctorsPage() {
             >
               Book Appointment
             </Link>
-            <a
-              href={`tel:${HOSPITAL.phone}`}
-              className="rounded-full border border-white px-8 py-3 text-xs font-bold text-white hover:bg-white/10 transition-all uppercase tracking-wider"
-            >
-              Call Now
-            </a>
+            {tel && (
+              <a href={tel} className="rounded-full border border-white px-8 py-3 text-xs font-bold text-white hover:bg-white/10 transition-all uppercase tracking-wider">
+                Call Now
+              </a>
+            )}
           </div>
         </div>
       </section>

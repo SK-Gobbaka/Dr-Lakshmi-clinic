@@ -110,6 +110,7 @@ export function AppointmentForm({
                 {d.name}
               </option>
             ))}
+            <option value="OTHERS">Other Doctors</option>
           </select>
         </label>
         <label className={lbl}>

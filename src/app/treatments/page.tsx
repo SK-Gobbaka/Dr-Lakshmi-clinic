@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { listTreatments } from "@/lib/local-store";
+import { listTreatments } from "@/lib/clinic";
+import { Photo } from "@/components/shared/Photo";
 
 // Treatments are edited in the admin portal, so this page is always rendered fresh.
 export const dynamic = "force-dynamic";
@@ -11,8 +11,8 @@ export const metadata: Metadata = {
   description: "Hair and skin treatments at Dr. Lakshmi Skin & Hair Clinic, with the procedures offered under each.",
 };
 
-export default function TreatmentsPage() {
-  const treatments = listTreatments({ publishedOnly: true });
+export default async function TreatmentsPage() {
+  const treatments = await listTreatments({ publishedOnly: true });
 
   return (
     <div className="min-h-screen">
@@ -36,13 +36,15 @@ export default function TreatmentsPage() {
 
       <section className="pb-16">
         <div className="mx-auto max-w-[1200px] space-y-8 px-4 sm:px-6 lg:px-8">
-          {treatments.length === 0 && <p className="text-text-secondary">Our treatment list is being updated. Please call the clinic for details.</p>}
+          {treatments.length === 0 && <p className="text-text-secondary">Our treatment list is being updated. Please check back soon, or book a consultation.</p>}
           {treatments.map((t) => (
             <article key={t.id} id={t.slug} className="scroll-mt-28 overflow-hidden rounded-2xl border border-border bg-white">
-              <div className="grid lg:grid-cols-[18rem_1fr]">
-                <div className="relative aspect-[3/2] lg:aspect-auto lg:min-h-full">
-                  <Image src={t.image} alt={t.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 288px" />
-                </div>
+              <div className={t.image ? "grid lg:grid-cols-[18rem_1fr]" : undefined}>
+                {t.image && (
+                  <div className="relative aspect-[3/2] lg:aspect-auto lg:min-h-full">
+                    <Photo src={t.image} alt={t.name} fallbackName={t.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 288px" />
+                  </div>
+                )}
                 <div className="p-6 sm:p-8">
                   <h2 className="font-heading text-2xl font-semibold text-ink sm:text-3xl">{t.name}</h2>
                   {t.subcategories.length > 0 ? (

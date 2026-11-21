@@ -13,10 +13,12 @@ interface AccordionItemProps {
 
 export function AccordionItem({ question, answer, isOpen, onToggle }: AccordionItemProps) {
   const contentId = React.useId();
+  const buttonId = React.useId();
 
   return (
     <div className="border-b border-border last:border-0">
       <button
+        id={buttonId}
         type="button"
         className="flex w-full items-center justify-between gap-4 py-5 text-left transition-colors hover:text-primary"
         onClick={onToggle}
@@ -35,6 +37,9 @@ export function AccordionItem({ question, answer, isOpen, onToggle }: AccordionI
       <div
         id={contentId}
         role="region"
+        aria-labelledby={buttonId}
+        aria-hidden={!isOpen}
+        inert={!isOpen}
         className={cn(
           "grid transition-all duration-200 ease-in-out",
           isOpen ? "grid-rows-[1fr] opacity-100 pb-5" : "grid-rows-[0fr] opacity-0"

@@ -1,42 +1,39 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { claimDueReminders, releaseReminder } from "@/lib/local-store";
-import { sendAppointmentReminder } from "@/lib/whatsapp";
-import { parseApiDate } from "@/lib/slots";
+import { claimDueReminders, releaseReminder, remindersFor } from "@/lib/clinic";
+import { isDatabaseDown } from "@/lib/db";
+import { sendOne } from "@/lib/integrations/deliver";
+import { whatsappConfigured } from "@/lib/integrations/whatsapp";
+import { log } from "@/lib/logger";
+
+export const dynamic = "force-dynamic";
 
 /**
- * Cron endpoint for sending appointment reminders about 2 hours before.
- * Vercel Cron sends `Authorization: Bearer $CRON_SECRET` automatically when the
- * CRON_SECRET env var is set; other schedulers must send the same header.
+ * Sends appointment reminders about two hours before a confirmed appointment. Call it every 15 minutes with
+ * `Authorization: Bearer <CRON_SECRET>` (on Cloudflare the worker's scheduled trigger does this; see wrangler.jsonc).
  * The secret is not accepted in the URL, so it cannot end up in access logs.
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+  const given = Buffer.from(request.headers.get("authorization") ?? "");
+  const want = Buffer.from(`Bearer ${secret}`);
+  if (!secret || given.length !== want.length || !timingSafeEqual(given, want)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Without WhatsApp nothing could be delivered, and claiming reminders now would lose them.
+  if (!whatsappConfigured()) return NextResponse.json({ success: true, remindersSent: 0, skipped: "WhatsApp is not connected" });
 
   try {
-    // Claimed atomically: an overlapping run gets nothing, so no double message.
-    const due = claimDueReminders(105 * 60_000, 135 * 60_000);
+    // Claimed atomically: an overlapping run gets nothing, so no patient is reminded twice.
+    const due = await claimDueReminders(105 * 60_000, 135 * 60_000);
     let sent = 0;
-    for (const a of due) {
-      try {
-        const result = await sendAppointmentReminder(a.phone, {
-          patientName: a.fullName,
-          date: parseApiDate(a.date),
-          startTime: a.startTime,
-          confirmationToken: a.token,
-        });
-        if (!result.success) throw new Error(result.error || "WhatsApp send failed");
-        sent++;
-      } catch (error) {
-        console.error("[Cron Reminders] send failed", a.id, error);
-        releaseReminder(a.id); // next run retries
-      }
+    for (const { appointment, message } of await remindersFor(due)) {
+      if ((await sendOne(message)) === "SENT") sent++;
+      else await releaseReminder(appointment.id); // the next run tries again while the window is still open
     }
-    return NextResponse.json({ success: true, remindersSent: sent });
-  } catch (error) {
-    console.error("[Cron Reminders]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ success: true, remindersSent: sent, retryLater: due.length - sent });
+  } catch (err) {
+    log.error("cron.reminders", err);
+    return NextResponse.json({ error: isDatabaseDown(err) ? "Database unavailable" : "Internal server error" }, { status: isDatabaseDown(err) ? 503 : 500 });
   }
 }
